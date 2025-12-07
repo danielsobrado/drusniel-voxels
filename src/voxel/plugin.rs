@@ -254,7 +254,8 @@ fn is_tree_leaves(world_x: i32, world_y: i32, world_z: i32) -> bool {
 }
 
 // Water level constant - areas below this height will be filled with water
-const WATER_LEVEL: i32 = 18;
+// Set to 0 to effectively disable water (terrain starts at ~15+)
+const WATER_LEVEL: i32 = 0;
 
 fn setup_voxel_world(
     mut world: ResMut<VoxelWorld>,
@@ -279,11 +280,11 @@ fn setup_voxel_world(
                 for y in 0..CHUNK_SIZE {
                     let world_y = chunk_world_y + y as i32;
 
-                    // Check for dungeon structures first
-                    if is_dungeon_wall(world_x, world_y, world_z) {
-                        chunk.set(UVec3::new(x as u32, y as u32, z as u32), VoxelType::Rock);
-                        continue;
-                    }
+                    // Check for dungeon structures first - DISABLED FOR DEBUGGING
+                    // if is_dungeon_wall(world_x, world_y, world_z) {
+                    //     chunk.set(UVec3::new(x as u32, y as u32, z as u32), VoxelType::Rock);
+                    //     continue;
+                    // }
 
                     // Check for caves
                     if is_cave(world_x, world_y, world_z) && world_y < terrain_height - 3 {
@@ -438,27 +439,11 @@ fn mesh_dirty_chunks_system(
                 }
             }
             
-            // Handle water mesh
-            if mesh_result.water.is_empty() {
-                if let Some(entity) = chunk.water_mesh_entity() {
-                    commands.entity(entity).despawn();
-                    chunk.clear_water_mesh_entity();
-                }
-            } else {
-                let mesh = mesh_result.water.into_mesh();
-                let mesh_handle = meshes.add(mesh);
-                
-                if let Some(entity) = chunk.water_mesh_entity() {
-                    commands.entity(entity).insert(Mesh3d(mesh_handle));
-                } else {
-                    let entity = commands.spawn((
-                        Mesh3d(mesh_handle),
-                        MeshMaterial3d(water_material.handle.clone()),
-                        Transform::from_xyz(world_pos.x as f32, world_pos.y as f32, world_pos.z as f32),
-                        crate::voxel::meshing::ChunkMesh { chunk_position: chunk_pos },
-                    )).id();
-                    chunk.set_water_mesh_entity(entity);
-                }
+            // Handle water mesh - DISABLED FOR DEBUGGING
+            // Skip water mesh creation entirely
+            if let Some(entity) = chunk.water_mesh_entity() {
+                commands.entity(entity).despawn();
+                chunk.clear_water_mesh_entity();
             }
         }
     }

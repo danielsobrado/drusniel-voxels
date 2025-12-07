@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo check:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd Valheim-style visual atmosphere\n\n- Add bloom post-processing with soft glow settings\n- Switch to ACES Fitted tonemapping for warmer colors\n- Implement exponential squared fog with warm directional scatter\n- Add floating particle system (pollen/dust) that follows player\n- Increase grass density (60% coverage, up to 15k blades)\n- Add golden grass color variations for meadow look\n- Make grass blades taller (1.4 units) with gradient coloring\n- Update sky and ambient light for golden hour atmosphere\n- Add warm pink/purple horizon haze\n- Add vegetation plugin with grass, rocks, and particle systems\n- Add interaction and viewmodel modules\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push)",
+      "Bash(cargo run:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

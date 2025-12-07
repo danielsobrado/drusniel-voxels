@@ -22,7 +22,8 @@ pub fn setup_voxel_material(
         perceptual_roughness: 0.9,
         metallic: 0.0,
         reflectance: 0.1,
-        alpha_mode: AlphaMode::Mask(0.5), // Allow transparency for leaves/grass
+        // Use a mask so leaves/foliage can leverage alpha but keep opaque blocks solid
+        alpha_mode: AlphaMode::Mask(0.5),
         ..default()
     });
 

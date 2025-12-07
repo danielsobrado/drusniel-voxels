@@ -399,7 +399,7 @@ fn add_face_with_ao(
     let row = (atlas_idx / 4) as f32;
     
     // UV padding to prevent texture bleeding from adjacent tiles
-    let padding = 0.01; // Larger inset from tile edges
+    let padding = 0.01;
     
     let u_min = col / cols + padding;
     let u_max = (col + 1.0) / cols - padding;
