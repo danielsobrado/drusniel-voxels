@@ -65,7 +65,8 @@ impl Material for GrassMaterial {
     }
 
     fn alpha_mode(&self) -> AlphaMode {
-        AlphaMode::Mask(0.5)
+        // Render fully opaque to avoid looking like ground-projected shadows
+        AlphaMode::Opaque
     }
 }
 

@@ -1,197 +1,75 @@
-# Grass Rendering Fix
+# Grass Rendering Stripe Artifact Fix
 
-## Issue
-Grass patches were being spawned but were not visible in the world despite:
-- Grass material and shader being properly configured
-- Grass entities being created with correct components
-- Mesh instances being generated
+## Issue Description & Symptoms
+- Grass rendered in obvious rows/stripes with aligned shadows, breaking natural randomness.
+- Pattern most visible looking across flat terrain where triangles share similar `z` values.
+- Naga debug logs appeared during shader validation but were informational, not the cause.
 
-## Root Cause Analysis
-
-### Problem 1: Incorrect Normal Vector Calculation
-The primary issue was in the `collect_grass_instances` function in `src/vegetation/mod.rs`. The function was calculating surface normals by transforming vertices to world space first, then computing the cross product:
-
+## Root Cause (with code)
+- Grass instance sampling seeded randomness per triangle using truncated summed positions:
 ```rust
-// INCORRECT APPROACH
-let v0 = transform.transform_point(Vec3::from(positions[tri[0] as usize]));
-let v1 = transform.transform_point(Vec3::from(positions[tri[1] as usize]));
-let v2 = transform.transform_point(Vec3::from(positions[tri[2] as usize]));
+// Before (collect_grass_instances)
+let seed_x = (v0.x + v1.x + v2.x) as i32;
+let seed_z = (v0.z + v1.z + v2.z) as i32;
 
-let normal = (v1 - v0).cross(v2 - v0);
-let normal_dir = normal.normalize();
+for i in 0..blade_count {
+    let r1 = simple_hash(seed_x + i as i32 * 3, seed_z + i as i32 * 5).sqrt();
+    let r2 = simple_hash(seed_x + i as i32 * 7, seed_z + i as i32 * 11);
+    // ...
+}
 ```
+- Adjacent triangles along rows shared nearly identical integer `seed_z` values, so the hash inputs repeated, producing correlated blade placement (striping).
 
-This caused all normals to point downward (`Vec3(0.0, -1.0, 0.0)`) instead of upward, causing the filter `if normal_dir.y <= 0.25` to reject all potential grass spawn surfaces.
-
-### Problem 2: Incorrect Mesh Handle Access
-The code was attempting to access `Mesh3d` incorrectly:
-
+## Complete Solution (before/after)
 ```rust
-// WRONG
-let Some(chunk_source_mesh) = meshes.get(chunk_mesh) else { ... };
-```
+// After (collect_grass_instances)
+for (tri_idx, tri) in indices.chunks(3).enumerate() {
+    let centroid = (v0 + v1 + v2) / 3.0;
+    let seed_base_bits = centroid.x.to_bits()
+        .wrapping_mul(73856093)
+        ^ centroid.z.to_bits().wrapping_mul(19349663)
+        ^ centroid.y.to_bits().wrapping_mul(83492791)
+        ^ (tri_idx as u32).wrapping_mul(2654435761);
+    let seed_base = seed_base_bits as i32;
 
-`Mesh3d` is a tuple struct containing `Handle<Mesh>`, requiring:
-
-```rust
-// CORRECT
-let Some(chunk_source_mesh) = meshes.get(&chunk_mesh.0) else { ... };
-```
-
-## Solution
-
-### Fix 1: Use Mesh's Stored Normals
-Instead of recalculating normals from transformed vertices, use the mesh's pre-calculated normal attributes and transform them properly:
-
-```rust
-// Get stored normals from mesh
-let normals = match mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
-    Some(VertexAttributeValues::Float32x3(values)) => values,
-    _ => {
-        warn!("Mesh has no NORMAL attribute");
-        return Vec::new();
-    }
-};
-
-// Use the stored normal and transform it correctly
-let normal_local = Vec3::from(normals[tri[0] as usize]);
-let normal_world = transform.rotation * normal_local; // Rotation only, not translation
-let normal_dir = normal_world.normalize();
-```
-
-**Why this works:**
-- Voxel chunk meshes store normals as `[0.0, 1.0, 0.0]` for top faces
-- Transforming normals requires only rotation, not full point transformation
-- This preserves the correct normal direction regardless of chunk position
-
-### Fix 2: Access Mesh Handle Correctly
-```rust
-let Some(chunk_source_mesh) = meshes.get(&chunk_mesh.0) else {
-    continue;
-};
-```
-
-### Fix 3: Add ViewVisibility Component
-Added `ViewVisibility::default()` to spawned grass entities for proper rendering pipeline integration:
-
-```rust
-commands.spawn((
-    Mesh3d(mesh_handle),
-    MeshMaterial3d(material_handle),
-    Transform::IDENTITY,
-    GlobalTransform::IDENTITY,
-    Visibility::Visible,
-    InheritedVisibility::VISIBLE,
-    ViewVisibility::default(),  // Added
-));
-```
-
-## Configuration Changes
-
-### Grass Density Settings
-Set reasonable production values:
-- **Density**: 20 blades per square unit (down from 50 during testing)
-- **Max count**: 2000 instances per chunk (down from 5000 during testing)
-
-```rust
-let instances = collect_grass_instances(chunk_source_mesh, transform, 20, 2000);
-```
-
-### Shader Configuration
-Confirmed shader path is correct in `src/vegetation/grass_material.rs`:
-
-```rust
-impl Material for GrassMaterial {
-    fn vertex_shader() -> ShaderRef {
-        "shaders/grass.wgsl".into()
-    }
-
-    fn fragment_shader() -> ShaderRef {
-        "shaders/grass.wgsl".into()
-    }
-
-    fn alpha_mode(&self) -> AlphaMode {
-        AlphaMode::Mask(0.5)
+    for i in 0..blade_count {
+        let blade_jitter = (i as u32).wrapping_mul(97531) as i32;
+        let hash_a = seed_base.wrapping_add(blade_jitter).wrapping_mul(1597334677);
+        let hash_b = seed_base.wrapping_sub(blade_jitter.rotate_left(13)).wrapping_mul(374761393);
+        let r1 = simple_hash(hash_a, hash_b).sqrt();
+        let r2 = simple_hash(hash_b.wrapping_mul(17), hash_a.wrapping_mul(31));
+        // ...
     }
 }
 ```
+- Uses full float bit patterns and triangle index to decorrelate seeds.
+- Adds per-blade jitter mixed into the hash inputs.
+- Preserves deterministic distribution while eliminating striping.
 
-Shader location: `assets/shaders/grass.wgsl`
+## Debug Process & Findings
+1. Observed world rendering: rows/stripes aligned with terrain grid.
+2. Inspected grass instance generation in `collect_grass_instances`; noticed integer truncation of triangle sums and repeated seeds.
+3. Confirmed shader (`assets/shaders/grass.wgsl`) only drives wind/lighting; unlikely to create placement stripes.
+4. Verified hash usage and determined better seeding was needed; implemented bit-mixed centroid seed with triangle index and blade jitter.
 
-## Debug Process
+## System Architecture Overview (grass)
+- Mesh sampling: `collect_grass_instances` walks chunk mesh triangles, rejects tiny/steep faces, and scatters blades based on area.
+- Instancing: `build_grass_patch_mesh` builds a combined mesh per chunk from a blade template and per-instance transforms.
+- Rendering: Grass uses a custom WGSL wind shader (`assets/shaders/grass.wgsl`) and per-chunk grass materials for color variety.
+- Materials: Variations are picked deterministically from chunk position.
 
-### Diagnostic Logging Added (Now Removed)
-During debugging, comprehensive logging was added to track:
-1. Number of chunks being processed
-2. Grass instances generated per chunk
-3. Triangle rejection reasons (area too small, wrong normal direction)
-4. Successful grass patch spawning
-
-Example debug output that confirmed the fix:
-```
-INFO voxel_builder::vegetation: Chunk IVec3(6, 1, 8) generated 2000 grass instances
-INFO voxel_builder::vegetation: Spawning grass patch for chunk IVec3(6, 1, 8) at world origin
-```
-
-### Key Debug Findings
-Before fix:
-```
-Triangle rejected: normal_dir = Vec3(0.0, -1.0, 0.0), y = -1
-Grass filtering: 0 triangles too small, 540 wrong normal, 0 accepted
-Chunk IVec3(7, 1, 7) generated 0 grass instances
-```
-
-After fix:
-```
-Triangle rejected: normal_dir = Vec3(0.0, 0.0, 1.0), y = 0  // Side faces (correct)
-Chunk IVec3(6, 1, 8) generated 2000 grass instances         // Success!
-```
-
-## System Architecture
-
-### Grass Spawning Pipeline
-1. **Setup** (`setup_grass_patch_assets`): Creates blade mesh template and material variations
-2. **Attachment** (`attach_procedural_grass_to_chunks`): Runs per frame in Update schedule
-   - Queries chunks without `ChunkGrassAttached` marker
-   - Skips water surfaces
-   - Collects grass instances from upward-facing triangles
-   - Builds combined mesh for all instances
-   - Spawns single grass entity at world origin per chunk
-3. **Animation** (`update_grass_time`): Updates time uniform for wind animation
-
-### Grass Instance Collection Logic
-```rust
-fn collect_grass_instances(
-    mesh: &Mesh,
-    transform: &Transform,
-    density: u32,
-    max_count: usize,
-) -> Vec<GrassInstance>
-```
-
-**Filters:**
-- Triangle area must be > 0.0001 (eliminates degenerate triangles)
-- Normal Y component must be > 0.25 (only upward-facing surfaces ~75° from vertical)
-
-**Instance placement:**
-- Uses barycentric coordinates for even distribution within triangles
-- Blade count per triangle: `(density as f32 * area).ceil()`
-- Deterministic random placement via `simple_hash` function
-
-## Result
-✅ Grass now renders correctly on all upward-facing chunk surfaces  
-✅ Proper wind animation via WGSL shader  
-✅ Multiple color variations for visual diversity  
-✅ Efficient batched rendering (one mesh per chunk)
+## Configuration Details
+- Density and limits: `collect_grass_instances` called with `density = 20` blades/m² and `max_count = 2000` per chunk.
+- Blade template/materials: Created in `setup_grass_patch_assets`; colors/wind params set in `GrassMaterial`.
+- Hashing: `simple_hash` provides deterministic pseudo-random values for placement and variation.
 
 ## Related Files
-- `src/vegetation/mod.rs` - Main grass spawning logic
-- `src/vegetation/grass_material.rs` - Material definition and shader reference
-- `assets/shaders/grass.wgsl` - Vertex and fragment shaders with wind animation
-- `src/voxel/meshing.rs` - Chunk mesh generation with normals
+- `src/vegetation/mod.rs` — grass instance generation, mesh build, material selection.
+- `assets/shaders/grass.wgsl` — grass vertex/fragment shading (wind, lighting, color blend).
 
-## Future Improvements
-- Consider LOD system for distant grass
-- Optimize instance count based on camera distance
-- Add grass type variations based on biome/height
-- Implement grass culling for chunks outside view frustum
+## Future Improvement Suggestions
+- Add blue-noise or Poisson-disc jitter per triangle to further reduce clustering.
+- Vary density based on biome/height map for more natural coverage.
+- Introduce per-chunk seed exposed via config to allow user-tunable randomness.
+- Add a small normal-based bend variation to break up uniform silhouettes.
+- Consider GPU-driven instance generation for larger draw distances.

@@ -59,21 +59,21 @@ pub fn setup_grass_patch_assets(
     let blade = meshes.add(create_grass_blade_mesh());
     info!("Created grass blade template mesh");
 
-    // Create grass materials with different color variations
+    // Create grass materials with different color variations (kept vivid to ensure visibility)
     let grass_material_configs = vec![
         GrassMaterial::new(
-            LinearRgba::new(0.25, 0.20, 0.08, 1.0),
-            LinearRgba::new(0.95, 0.85, 0.45, 1.0),
+            LinearRgba::new(0.16, 0.28, 0.05, 1.0), // Deep green base
+            LinearRgba::new(0.60, 0.85, 0.35, 1.0), // Bright green tip
             0.35, 1.8, 0.08,
         ),
         GrassMaterial::new(
-            LinearRgba::new(0.30, 0.22, 0.10, 1.0),
-            LinearRgba::new(0.85, 0.75, 0.50, 1.0),
+            LinearRgba::new(0.18, 0.32, 0.07, 1.0),
+            LinearRgba::new(0.70, 0.90, 0.38, 1.0),
             0.30, 1.5, 0.10,
         ),
         GrassMaterial::new(
-            LinearRgba::new(0.15, 0.20, 0.08, 1.0),
-            LinearRgba::new(0.70, 0.80, 0.40, 1.0),
+            LinearRgba::new(0.12, 0.26, 0.06, 1.0),
+            LinearRgba::new(0.55, 0.78, 0.32, 1.0),
             0.40, 2.0, 0.07,
         ),
     ];
@@ -193,7 +193,14 @@ fn collect_grass_instances(
     let mut rejected_normal = 0;
     let mut accepted = 0;
 
-    for tri in indices.chunks(3) {
+    // Per-chunk salt so adjacent chunks don't align
+    let chunk_seed = {
+        let cx = transform.translation.x.floor() as i32;
+        let cz = transform.translation.z.floor() as i32;
+        mix_bits32(cx as u32 ^ (cz as u32).wrapping_mul(0x9e37_79b9) ^ 0x85eb_ca6b) as i32
+    };
+
+    for (tri_idx, tri) in indices.chunks(3).enumerate() {
         if tri.len() < 3 {
             continue;
         }
@@ -223,12 +230,31 @@ fn collect_grass_instances(
         accepted += 1;
 
         let blade_count = (density as f32 * area).ceil() as u32;
-        let seed_x = (v0.x + v1.x + v2.x) as i32;
-        let seed_z = (v0.z + v1.z + v2.z) as i32;
+
+        // Use centroid with high precision to create unique seeds per triangle
+        // Quantize to high-resolution world space and mix triangle + chunk seed to avoid aligned repeats.
+        let centroid = (v0 + v1 + v2) / 3.0;
+        let qx = (centroid.x * 4096.0).round() as i32;
+        let qy = (centroid.y * 4096.0).round() as i32;
+        let qz = (centroid.z * 4096.0).round() as i32;
+
+        // Strongly mix hashed components to decorrelate adjacent triangles
+        let mut seed_base_bits = (qx as u32).rotate_left(3)
+            ^ (qz as u32).rotate_left(17)
+            ^ (qy as u32).rotate_left(29)
+            ^ (tri_idx as u32).wrapping_mul(0x9e37_79b9)
+            ^ chunk_seed as u32;
+        seed_base_bits = mix_bits32(seed_base_bits);
+        let seed_base = seed_base_bits as i32;
 
         for i in 0..blade_count {
-            let r1 = simple_hash(seed_x + i as i32 * 3, seed_z + i as i32 * 5).sqrt();
-            let r2 = simple_hash(seed_x + i as i32 * 7, seed_z + i as i32 * 11);
+            // Two independent hashes for barycentric sampling (u1/u2)
+            let h1 = mix_bits32(seed_base_bits ^ (i as u32).wrapping_mul(0x85eb_ca6b));
+            let h2 = mix_bits32(seed_base_bits ^ (i as u32).wrapping_mul(0xc2b2_ae35) ^ 0x27d4_eb2d);
+            let u1 = (h1 as f32) / (u32::MAX as f32);
+            let u2 = (h2 as f32) / (u32::MAX as f32);
+            let r1 = u1.sqrt(); // area-corrected radial factor
+            let r2 = u2;        // angle factor
 
             let bary = Vec3::new(1.0 - r1, r1 * (1.0 - r2), r1 * r2);
             let position = v0 * bary.x + v1 * bary.y + v2 * bary.z;
@@ -283,7 +309,9 @@ fn build_grass_patch_mesh(template: &Mesh, instances: &[GrassInstance]) -> Optio
 
         let align = Quat::from_rotation_arc(Vec3::Y, instance.normal);
         let rotation = align * Quat::from_rotation_y(yaw);
-        let transform = Mat4::from_scale_rotation_translation(Vec3::splat(scale), rotation, instance.position);
+        // Lift slightly along the normal to avoid z-fighting with the ground
+        let base_pos = instance.position + instance.normal * 0.05;
+        let transform = Mat4::from_scale_rotation_translation(Vec3::splat(scale), rotation, base_pos);
         let normal_matrix = Mat3::from_quat(rotation);
 
         let index_offset = (i as u32) * base_len;
@@ -353,10 +381,6 @@ pub fn spawn_grass_blades(
     }
 
     spawned.0 = true;
-
-    // TEMPORARY: Skip grass spawning to debug blue shapes
-    info!("Grass spawning disabled for debugging");
-    return;
 
     // Create grass blade mesh (thin vertical quad)
     let grass_mesh = meshes.add(create_grass_blade_mesh());
@@ -620,6 +644,16 @@ fn simple_hash(x: i32, z: i32) -> f32 {
     (n as u32 as f32) / (u32::MAX as f32)
 }
 
+// Mix function to decorrelate nearby integer seeds (SplitMix32-style)
+fn mix_bits32(mut x: u32) -> u32 {
+    x ^= x >> 16;
+    x = x.wrapping_mul(0x7feb_352d);
+    x ^= x >> 15;
+    x = x.wrapping_mul(0x846c_a68b);
+    x ^= x >> 16;
+    x
+}
+
 /// Spawn floating particles around the player for that Valheim atmosphere
 pub fn spawn_floating_particles(
     mut commands: Commands,
@@ -637,10 +671,6 @@ pub fn spawn_floating_particles(
     };
 
     spawned.0 = true;
-
-    // TEMPORARY: Skip particle spawning to debug blue shapes
-    info!("Particle spawning disabled for debugging");
-    return;
 
     let camera_pos = camera_transform.translation;
 
