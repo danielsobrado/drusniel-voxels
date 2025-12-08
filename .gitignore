@@ -1,1 +1,7 @@
 /target
+.history/src/voxel/*
+log.txt
+log.err
+.claude/
+.history/
+
