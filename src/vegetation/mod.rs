@@ -2,6 +2,7 @@ pub mod grass_material;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
+use bevy::light::NotShadowCaster;
 use bevy_mesh::{Indices, PrimitiveTopology, VertexAttributeValues};
 use crate::constants::CHUNK_SIZE;
 use crate::voxel::world::VoxelWorld;
@@ -674,42 +675,42 @@ pub fn spawn_floating_particles(
 
     let camera_pos = camera_transform.translation;
 
-    // Small glowing particle mesh
-    let particle_mesh = meshes.add(Sphere::new(0.08).mesh().build());
+    // Larger particle mesh for better visibility
+    let particle_mesh = meshes.add(Sphere::new(0.25).mesh().build());
 
-    // Warm golden pollen material (emissive for glow with bloom)
+    // Bright golden pollen material - very emissive for visibility
     let pollen_material = materials.add(StandardMaterial {
-        base_color: Color::srgba(1.0, 0.95, 0.7, 0.6),
-        emissive: LinearRgba::new(2.0, 1.8, 1.0, 1.0),
-        alpha_mode: AlphaMode::Blend,
+        base_color: Color::srgb(1.0, 0.9, 0.4),
+        emissive: LinearRgba::new(5.0, 4.0, 1.5, 1.0),
+        alpha_mode: AlphaMode::Opaque,
         unlit: true,
         ..default()
     });
 
-    // Soft white dust material
+    // Bright white dust material
     let dust_material = materials.add(StandardMaterial {
-        base_color: Color::srgba(1.0, 1.0, 1.0, 0.4),
-        emissive: LinearRgba::new(0.5, 0.5, 0.6, 1.0),
-        alpha_mode: AlphaMode::Blend,
+        base_color: Color::srgb(1.0, 1.0, 1.0),
+        emissive: LinearRgba::new(4.0, 4.0, 5.0, 1.0),
+        alpha_mode: AlphaMode::Opaque,
         unlit: true,
         ..default()
     });
 
-    let particle_count = 150;
+    let particle_count = 200;
 
     for i in 0..particle_count {
         let hash1 = simple_hash(i * 17, i * 31);
         let hash2 = simple_hash(i * 23, i * 47);
         let hash3 = simple_hash(i * 13, i * 53);
 
-        // Spawn in a sphere around camera start position
-        let radius = 30.0 + hash1 * 70.0;
+        // Spawn in a sphere around camera start position - closer to camera
+        let radius = 15.0 + hash1 * 50.0;
         let angle = hash2 * std::f32::consts::TAU;
-        let height = hash3 * 40.0 + 5.0;
+        let height = hash3 * 30.0 - 5.0; // -5 to +25 relative to camera
 
         let x = camera_pos.x + angle.cos() * radius;
         let z = camera_pos.z + angle.sin() * radius;
-        let y = camera_pos.y - 20.0 + height;
+        let y = camera_pos.y + height;
 
         let material = if hash1 > 0.6 {
             pollen_material.clone()
@@ -717,12 +718,14 @@ pub fn spawn_floating_particles(
             dust_material.clone()
         };
 
-        let scale = 0.5 + hash2 * 1.0;
+        // Visible particle size - larger for debugging
+        let scale = 1.0 + hash2 * 1.0;
 
         commands.spawn((
             Mesh3d(particle_mesh.clone()),
             MeshMaterial3d(material),
             Transform::from_xyz(x, y, z).with_scale(Vec3::splat(scale)),
+            NotShadowCaster,
             FloatingParticle {
                 base_y: y,
                 phase: hash3 * std::f32::consts::TAU,

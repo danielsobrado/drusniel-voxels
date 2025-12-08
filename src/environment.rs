@@ -1,4 +1,8 @@
 use bevy::prelude::*;
+use bevy_water::*;
+
+/// Water level constant - matches terrain generation
+pub const SEA_LEVEL: f32 = 18.0;
 
 /// Settings that drive the sky and sun animation
 #[derive(Resource)]
@@ -22,16 +26,25 @@ impl Default for AtmosphereSettings {
 #[derive(Component)]
 pub struct Sun;
 
-#[derive(Component)]
-pub struct Cloud;
-
 pub struct AtmospherePlugin;
 
 impl Plugin for AtmospherePlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(AtmosphereSettings::default())
+        app
+            .insert_resource(AtmosphereSettings::default())
             // Soft initial sky tint
             .insert_resource(ClearColor(Color::srgba(0.60, 0.70, 0.90, 1.0)))
+            // bevy_water for dynamic ocean waves
+            .insert_resource(WaterSettings {
+                height: SEA_LEVEL,
+                amplitude: 0.5,
+                clarity: 0.4,
+                deep_color: Color::srgba(0.05, 0.15, 0.35, 0.95).into(),
+                shallow_color: Color::srgba(0.2, 0.5, 0.7, 0.85).into(),
+                edge_color: Color::srgba(0.6, 0.8, 0.9, 0.7).into(),
+                ..default()
+            })
+            .add_plugins((WaterPlugin, ImageUtilsPlugin))
             .add_systems(Startup, setup_atmosphere)
             .add_systems(Update, animate_atmosphere);
     }
@@ -39,8 +52,6 @@ impl Plugin for AtmospherePlugin {
 
 fn setup_atmosphere(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // Sun directional light with extended shadow range
     commands.spawn((
@@ -54,65 +65,14 @@ fn setup_atmosphere(
             .looking_to(Vec3::new(-0.3, -1.0, -0.2).normalize(), Vec3::Y),
         Sun,
     ));
-
-    // Small scattered cloud puffs high in the sky
-    let cloud_material = materials.add(StandardMaterial {
-        base_color: Color::srgba(1.0, 1.0, 1.0, 0.15),
-        alpha_mode: AlphaMode::Blend,
-        unlit: true,
-        cull_mode: None,
-        ..default()
-    });
-
-    // Spawn small cloud wisps scattered across the sky - much higher and smaller
-    let cloud_specs = [
-        (Vec3::new(100.0, 180.0, 100.0), 25.0),
-        (Vec3::new(250.0, 200.0, 50.0), 20.0),
-        (Vec3::new(400.0, 190.0, 300.0), 30.0),
-        (Vec3::new(150.0, 210.0, 400.0), 22.0),
-        (Vec3::new(350.0, 185.0, 200.0), 18.0),
-        (Vec3::new(50.0, 195.0, 350.0), 28.0),
-    ];
-
-    for (pos, size) in cloud_specs {
-        commands.spawn((
-            Mesh3d(meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(size)))),
-            MeshMaterial3d(cloud_material.clone()),
-            Transform::from_translation(pos),
-            Cloud,
-        ));
-    }
-
-    // Water plane at sea level - terrain basins will naturally fill
-    // Sea level matches the low points of terrain generation
-    const SEA_LEVEL: f32 = 18.0;
-    let water_material = materials.add(StandardMaterial {
-        base_color: Color::srgba(0.15, 0.35, 0.55, 0.7),
-        alpha_mode: AlphaMode::Blend,
-        perceptual_roughness: 0.1,
-        metallic: 0.0,
-        reflectance: 0.6,
-        double_sided: true,
-        cull_mode: None,
-        ..default()
-    });
-
-    // Large water plane covering the world at sea level
-    // World is 512x512, centered at (256, 256)
-    commands.spawn((
-        Mesh3d(meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(512.0)))),
-        MeshMaterial3d(water_material),
-        Transform::from_xyz(256.0, SEA_LEVEL, 256.0),
-    ));
 }
 
 fn animate_atmosphere(
     time: Res<Time>,
     mut settings: ResMut<AtmosphereSettings>,
-    mut sun_query: Query<(&mut Transform, &mut DirectionalLight), (With<Sun>, Without<Cloud>)>,
+    mut sun_query: Query<(&mut Transform, &mut DirectionalLight), With<Sun>>,
     mut ambient: ResMut<AmbientLight>,
     mut clear_color: ResMut<ClearColor>,
-    mut clouds: Query<&mut Transform, (With<Cloud>, Without<Sun>)>,
 ) {
     // Advance time
     settings.time = (settings.time + time.delta_secs()) % settings.day_length;
@@ -157,18 +117,6 @@ fn animate_atmosphere(
         1.0,
     );
 
-    // Drift clouds slowly across the sky
-    let drift = Vec3::new(0.02, 0.0, 0.005) * time.delta_secs();
-    for mut transform in clouds.iter_mut() {
-        transform.translation += drift;
-        // wrap around a large radius to avoid floating point drift
-        if transform.translation.x > 600.0 {
-            transform.translation.x -= 1200.0;
-        }
-        if transform.translation.z > 600.0 {
-            transform.translation.z -= 1200.0;
-        }
-    }
 }
 
 fn lerp(a: f32, b: f32, t: f32) -> f32 {

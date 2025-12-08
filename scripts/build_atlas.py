@@ -54,6 +54,10 @@ TEXTURE_MAPPINGS = [
     (8, ["Oak Bark Texture", "bark", "wood"]),
     # Index 9: Leaves
     (9, ["Oak Leaf Texture", "leaf", "leaves"]),
+    # Index 10: Dungeon Wall
+    (10, ["Dungeon Wall", "dungeon_wall"]),
+    # Index 11: Dungeon Floor (use cobblestone variant)
+    (11, ["Cobblestone Texture", "dungeon_floor"]),
 ]
 
 

@@ -1,8 +1,10 @@
 use bevy::prelude::*;
 use bevy::input::mouse::MouseMotion;
 use bevy::core_pipeline::tonemapping::Tonemapping;
+use bevy::core_pipeline::Skybox;
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::window::{CursorGrabMode, CursorOptions};
+use bevy_water::ImageReformat;
 use crate::voxel::world::VoxelWorld;
 use crate::voxel::types::Voxel;
 
@@ -56,13 +58,26 @@ impl Default for PlayerCamera {
     }
 }
 
-pub fn spawn_camera(mut commands: Commands) {
+pub fn spawn_camera(mut commands: Commands, asset_server: Res<AssetServer>) {
+    // Load the skybox cubemap image with cubemap reformat 
+    let skybox_image = ImageReformat::cubemap(
+        &mut commands,
+        &asset_server,
+        "textures/table_mountain_2_puresky_4k_cubemap.jpg",
+    );
+    
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(256.0, 50.0, 256.0).looking_at(Vec3::new(200.0, 30.0, 200.0), Vec3::Y),
         PlayerCamera::default(),
         // Tonemapping for better HDR look
         Tonemapping::AcesFitted,
+        // Skybox with the cubemap
+        Skybox {
+            image: skybox_image,
+            brightness: 1500.0,
+            rotation: Quat::IDENTITY,
+        },
         // Atmospheric fog with warm/pink horizon tint
         DistanceFog {
             color: Color::srgba(0.7, 0.8, 0.95, 1.0), // Soft blue-gray base

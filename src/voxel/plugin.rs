@@ -82,24 +82,25 @@ fn get_terrain_height(world_x: i32, world_z: i32) -> i32 {
     let x = world_x as f32;
     let z = world_z as f32;
 
-    // Base terrain with multiple noise layers
-    let base = fbm(x * 0.008, z * 0.008, 4) * 25.0 + 15.0;
+    // Base terrain with multiple noise layers - lowered to create more water/beaches
+    // Base now ranges from 10-30 instead of 15-40
+    let base = fbm(x * 0.008, z * 0.008, 4) * 20.0 + 10.0;
 
-    // Hills - larger features
-    let hills = fbm(x * 0.02, z * 0.02, 3) * 12.0;
+    // Hills - larger features (reduced)
+    let hills = fbm(x * 0.02, z * 0.02, 3) * 8.0;
 
     // Mountains - occasional tall peaks
     let mountain_mask = fbm(x * 0.005, z * 0.005, 2);
-    let mountains = if mountain_mask > 0.6 {
-        (mountain_mask - 0.6) * 60.0
+    let mountains = if mountain_mask > 0.65 {
+        (mountain_mask - 0.65) * 50.0
     } else {
         0.0
     };
 
-    // River valleys - carve into terrain
+    // River valleys - carve into terrain (wider rivers)
     let river_noise = (fbm(x * 0.015, z * 0.015, 2) * 6.28).sin();
-    let river_factor = if river_noise.abs() < 0.15 {
-        -8.0 * (1.0 - river_noise.abs() / 0.15)
+    let river_factor = if river_noise.abs() < 0.2 {
+        -10.0 * (1.0 - river_noise.abs() / 0.2)
     } else {
         0.0
     };
@@ -138,48 +139,95 @@ fn is_cave(world_x: i32, world_y: i32, world_z: i32) -> bool {
     cave_noise > cave_threshold && world_y > 2 && world_y < 45
 }
 
-fn is_dungeon_wall(world_x: i32, world_y: i32, world_z: i32) -> bool {
+fn is_dungeon_wall(world_x: i32, world_y: i32, world_z: i32) -> Option<VoxelType> {
     // Create dungeon structures at specific locations
-    let dungeon_spacing = 128;
-    let dungeon_size = 24;
+    let dungeon_spacing = 96;  // Closer spacing for more dungeons
+    let dungeon_size = 20;
+    let dungeon_floor_y = 3;  // Dungeon floor level
+    let dungeon_height = 12; // Dungeon interior height
 
     let dx = ((world_x % dungeon_spacing) + dungeon_spacing) % dungeon_spacing;
     let dz = ((world_z % dungeon_spacing) + dungeon_spacing) % dungeon_spacing;
 
+    // Dungeon entrance staircase - visible from surface
+    // Located at corner of each dungeon (position 2-4, 2-4 in dungeon local coords)
+    let entrance_x = 2;
+    let entrance_z = 2;
+    let entrance_size = 3;
+
+    if dx >= entrance_x && dx < entrance_x + entrance_size &&
+       dz >= entrance_z && dz < entrance_z + entrance_size {
+        // Staircase from surface down to dungeon
+        // Stairs go from Y=dungeon_floor_y+1 up to Y=50 (well above terrain)
+        if world_y > dungeon_floor_y && world_y <= 50 {
+            let stair_local_x = dx - entrance_x;
+            let stair_local_z = dz - entrance_z;
+
+            // Create spiral/straight staircase walls
+            let is_stair_wall = stair_local_x == 0 || stair_local_x == entrance_size - 1 ||
+                               stair_local_z == 0 || stair_local_z == entrance_size - 1;
+
+            // Interior is air (the stairwell)
+            if is_stair_wall && stair_local_x != 1 && stair_local_z != 1 {
+                return Some(VoxelType::DungeonWall);
+            } else {
+                // Stairwell interior - just air for the shaft
+                return Some(VoxelType::Air);
+            }
+        }
+    }
+
     // Check if we're in a dungeon area
-    if dx < dungeon_size && dz < dungeon_size && world_y >= 5 && world_y <= 20 {
+    if dx < dungeon_size && dz < dungeon_size && world_y >= dungeon_floor_y && world_y <= dungeon_floor_y + dungeon_height + 3 {
         let local_x = dx;
         let local_z = dz;
-        let local_y = world_y - 5;
+        let local_y = world_y - dungeon_floor_y;
+
+        // Only generate dungeon structure within height bounds
+        if local_y > dungeon_height {
+            return None; // Above dungeon ceiling
+        }
 
         // Create room walls
         let is_outer_wall = local_x == 0 || local_x == dungeon_size - 1 ||
                            local_z == 0 || local_z == dungeon_size - 1;
 
         // Create inner walls forming corridors
-        let corridor_width = 4;
         let wall_at_x = (local_x % 8 == 0 || local_x % 8 == 1) && local_x > 0 && local_x < dungeon_size - 1;
         let wall_at_z = (local_z % 8 == 0 || local_z % 8 == 1) && local_z > 0 && local_z < dungeon_size - 1;
 
         // Doorways in inner walls
-        let doorway_x = local_z >= 3 && local_z <= 5 || local_z >= 11 && local_z <= 13 || local_z >= 19 && local_z <= 21;
-        let doorway_z = local_x >= 3 && local_x <= 5 || local_x >= 11 && local_x <= 13 || local_x >= 19 && local_x <= 21;
+        let doorway_x = local_z >= 3 && local_z <= 5 || local_z >= 11 && local_z <= 13 || local_z >= 17 && local_z <= 19;
+        let doorway_z = local_x >= 3 && local_x <= 5 || local_x >= 11 && local_x <= 13 || local_x >= 17 && local_x <= 19;
 
         let is_inner_wall = (wall_at_x && !doorway_x) || (wall_at_z && !doorway_z);
 
         // Floor and ceiling
         let is_floor = local_y == 0;
-        let is_ceiling = local_y == 10;
+        let is_ceiling = local_y == dungeon_height;
 
         // Pillars at intersections
         let is_pillar = (local_x % 8 <= 1) && (local_z % 8 <= 1) &&
                        local_x > 0 && local_x < dungeon_size - 1 &&
                        local_z > 0 && local_z < dungeon_size - 1;
 
-        return (is_outer_wall || is_inner_wall || is_floor || is_ceiling || is_pillar) && local_y <= 10;
+        // Don't place ceiling over entrance
+        let over_entrance = dx >= entrance_x && dx < entrance_x + entrance_size &&
+                           dz >= entrance_z && dz < entrance_z + entrance_size;
+
+        if is_floor {
+            return Some(VoxelType::DungeonFloor);
+        } else if is_ceiling && !over_entrance {
+            return Some(VoxelType::DungeonFloor);
+        } else if is_outer_wall || is_inner_wall || is_pillar {
+            return Some(VoxelType::DungeonWall);
+        } else {
+            // Interior dungeon space - return Air so terrain doesn't fill it
+            return Some(VoxelType::Air);
+        }
     }
 
-    false
+    None
 }
 
 /// Check if a tree should spawn at this location
@@ -264,6 +312,9 @@ fn setup_voxel_world(
 ) {
     // Generate extensive procedural terrain
     let chunk_positions: Vec<IVec3> = world.all_chunk_positions().collect();
+    let mut total_sand = 0u32;
+    let mut total_dungeon_wall = 0u32;
+    let mut total_dungeon_floor = 0u32;
 
     for chunk_pos in chunk_positions {
         let mut chunk = Chunk::new(chunk_pos);
@@ -271,6 +322,9 @@ fn setup_voxel_world(
         let chunk_world_z = chunk_pos.z * CHUNK_SIZE_I32;
         let chunk_world_y = chunk_pos.y * CHUNK_SIZE_I32;
         let mut water_count = 0u32;
+        let mut sand_count = 0u32;
+        let mut dungeon_wall_count = 0u32;
+        let mut dungeon_floor_count = 0u32;
 
         for x in 0..CHUNK_SIZE {
             for z in 0..CHUNK_SIZE {
@@ -283,11 +337,16 @@ fn setup_voxel_world(
                 for y in 0..CHUNK_SIZE {
                     let world_y = chunk_world_y + y as i32;
 
-                    // Check for dungeon structures first - DISABLED FOR DEBUGGING
-                    // if is_dungeon_wall(world_x, world_y, world_z) {
-                    //     chunk.set(UVec3::new(x as u32, y as u32, z as u32), VoxelType::Rock);
-                    //     continue;
-                    // }
+                    // Check for dungeon structures first
+                    if let Some(dungeon_voxel) = is_dungeon_wall(world_x, world_y, world_z) {
+                        match dungeon_voxel {
+                            VoxelType::DungeonWall => dungeon_wall_count += 1,
+                            VoxelType::DungeonFloor => dungeon_floor_count += 1,
+                            _ => {}
+                        }
+                        chunk.set(UVec3::new(x as u32, y as u32, z as u32), dungeon_voxel);
+                        continue;
+                    }
 
                     // Check for caves
                     // Caves disabled for debugging blue holes
@@ -339,8 +398,9 @@ fn setup_voxel_world(
                         // Determine block based on depth from surface and biome
                         let depth = terrain_height - world_y;
 
-                        // Near water, use sand instead of topsoil
-                        let near_water = terrain_height <= WATER_LEVEL + 2;
+                        // Near water, use sand instead of topsoil (beaches and shorelines)
+                        // Expand beach area: any terrain within 6 blocks above water level
+                        let near_water = terrain_height <= WATER_LEVEL + 6;
 
                         match biome {
                             1 => {
@@ -377,8 +437,15 @@ fn setup_voxel_world(
                             }
                             _ => {
                                 // Normal terrain - use sand near water (beaches)
-                                if near_water && depth <= 2 {
-                                    VoxelType::Sand
+                                // Make beaches wider and deeper
+                                if near_water {
+                                    if depth <= 5 {
+                                        VoxelType::Sand
+                                    } else if depth <= 8 {
+                                        VoxelType::SubSoil
+                                    } else {
+                                        VoxelType::Rock
+                                    }
                                 } else if depth == 0 {
                                     VoxelType::TopSoil
                                 } else if depth <= 4 {
@@ -390,8 +457,10 @@ fn setup_voxel_world(
                         }
                     };
 
-                    if voxel == VoxelType::Water {
-                        water_count += 1;
+                    match voxel {
+                        VoxelType::Water => water_count += 1,
+                        VoxelType::Sand => sand_count += 1,
+                        _ => {}
                     }
                     chunk.set(UVec3::new(x as u32, y as u32, z as u32), voxel);
                 }
@@ -401,10 +470,24 @@ fn setup_voxel_world(
         chunk.mark_dirty();
         world.insert_chunk(chunk);
 
-        if water_count > 0 {
-            info!("Chunk {:?} generated {} water voxels", chunk_pos, water_count);
+        total_sand += sand_count;
+        total_dungeon_wall += dungeon_wall_count;
+        total_dungeon_floor += dungeon_floor_count;
+
+        if dungeon_wall_count > 0 || dungeon_floor_count > 0 {
+            info!("Chunk {:?} (world pos {:?}) has {} dungeon walls, {} dungeon floors",
+                  chunk_pos,
+                  IVec3::new(chunk_world_x, chunk_world_y, chunk_world_z),
+                  dungeon_wall_count, dungeon_floor_count);
         }
     }
+
+    info!("=== WORLD GENERATION SUMMARY ===");
+    info!("Total sand blocks: {}", total_sand);
+    info!("Total dungeon wall blocks: {}", total_dungeon_wall);
+    info!("Total dungeon floor blocks: {}", total_dungeon_floor);
+    info!("Dungeons should be at positions like (0-19, 3-18, 0-19), (96-115, 3-18, 96-115), etc.");
+    info!("Sand appears near water (terrain height <= 24) and in sandy biomes");
 }
 
 fn mesh_dirty_chunks_system(

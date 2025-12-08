@@ -180,6 +180,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5192cca8006f1fd4f7237516f40fa183bb07f8fbdfedaa0036de5ea9b0b45e78"
 
 [[package]]
+name = "anyhow"
+version = "1.0.100"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
+
+[[package]]
 name = "approx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1481,6 +1487,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_water"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba4cbcf34cdf4f2037ead11f41cf5df15ecff493ea8610d4df0a6389e6ad505a"
+dependencies = [
+ "anyhow",
+ "bevy",
+]
+
+[[package]]
 name = "bevy_window"
 version = "0.17.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2775,6 +2791,8 @@ dependencies = [
  "moxcms",
  "num-traits",
  "png",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -4817,6 +4835,7 @@ dependencies = [
  "bevy",
  "bevy_mesh",
  "bevy_shader",
+ "bevy_water",
  "criterion",
  "log",
  "serde",
@@ -5817,4 +5836,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "zune-core"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "111f7d9820f05fd715df3144e254d6fc02ee4088b0644c0ffd0efc9e6d9d2773"
+
+[[package]]
+name = "zune-jpeg"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc6fb7703e32e9a07fb3f757360338b3a567a5054f21b5f52a666752e333d58e"
+dependencies = [
+ "zune-core",
 ]
