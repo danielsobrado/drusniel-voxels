@@ -144,6 +144,9 @@ pub fn attach_procedural_grass_to_chunks(
             Mesh3d(mesh_handle),
             MeshMaterial3d(material_handle),
             Transform::IDENTITY,
+            GlobalTransform::IDENTITY,
+            Visibility::Visible,
+            InheritedVisibility::VISIBLE,
         ));
     }
 }
