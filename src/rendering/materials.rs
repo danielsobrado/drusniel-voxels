@@ -1,3 +1,4 @@
+use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::prelude::*;
 use crate::rendering::atlas::TextureAtlas;
 
@@ -70,5 +71,29 @@ pub fn setup_voxel_material(
     commands.insert_resource(WaterMaterial {
         handle: water_handle,
     });
+}
+
+/// Ensure the atlas uses a repeat/mipmapped sampler so tiled terrain does not clamp or alias
+pub fn configure_atlas_sampler(
+    atlas: Res<TextureAtlas>,
+    mut images: ResMut<Assets<Image>>,
+    mut configured: Local<bool>,
+) {
+    if *configured {
+        return;
+    }
+
+    if let Some(image) = images.get_mut(&atlas.handle) {
+        image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+            address_mode_u: ImageAddressMode::Repeat,
+            address_mode_v: ImageAddressMode::Repeat,
+            address_mode_w: ImageAddressMode::Repeat,
+            mag_filter: ImageFilterMode::Linear,
+            min_filter: ImageFilterMode::Linear,
+            mipmap_filter: ImageFilterMode::Linear,
+            ..default()
+        });
+        *configured = true;
+    }
 }
 

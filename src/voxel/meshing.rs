@@ -666,8 +666,8 @@ fn sample_voxel_for_texture(chunk: &Chunk, world: &VoxelWorld, local_pos: Vec3) 
     }
 }
 
-/// Compute triplanar UV coordinates that tile within an atlas tile
-fn compute_triplanar_uv(pos: [f32; 3], normal: [f32; 3], atlas_idx: u8) -> [f32; 2] {
+/// Compute planar UV coordinates in world space that tile within an atlas tile
+fn compute_triplanar_uv(world_pos: Vec3, normal: [f32; 3], atlas_idx: u8) -> [f32; 2] {
     let cols = 4.0f32;
     let rows = 4.0f32;
     let col = (atlas_idx % 4) as f32;
@@ -679,24 +679,27 @@ fn compute_triplanar_uv(pos: [f32; 3], normal: [f32; 3], atlas_idx: u8) -> [f32;
     let u_base = col / cols + padding;
     let v_base = row / rows + padding;
 
-    // Use normal to determine dominant axis for triplanar projection
+    // Use normal to determine dominant axis for projection
     let abs_normal = [normal[0].abs(), normal[1].abs(), normal[2].abs()];
 
     let (u_world, v_world) = if abs_normal[1] > abs_normal[0] && abs_normal[1] > abs_normal[2] {
         // Top/bottom face - use X and Z
-        (pos[0], pos[2])
+        (world_pos.x, world_pos.z)
     } else if abs_normal[0] > abs_normal[2] {
         // East/west face - use Z and Y
-        (pos[2], pos[1])
+        (world_pos.z, world_pos.y)
     } else {
         // North/south face - use X and Y
-        (pos[0], pos[1])
+        (world_pos.x, world_pos.y)
     };
+
+    // World-space scale so the pattern stays continuous across chunks
+    let tex_scale = 1.0 / 4.0; // 1 tile per 4 world units
 
     // Get fractional part, handling negative values correctly
     // rem_euclid ensures we always get a positive value in [0, 1)
-    let u_frac = u_world.rem_euclid(1.0);
-    let v_frac = v_world.rem_euclid(1.0);
+    let u_frac = (u_world * tex_scale).rem_euclid(1.0);
+    let v_frac = (v_world * tex_scale).rem_euclid(1.0);
 
     // Clamp to ensure we stay within tile bounds (avoid edge sampling issues)
     let u_clamped = u_frac.clamp(0.01, 0.99);
@@ -719,6 +722,7 @@ pub fn generate_chunk_mesh_surface_nets(
 ) -> ChunkMeshResult {
     let mut solid_mesh = MeshData::new();
     let mut water_mesh = MeshData::new();
+    let chunk_origin = VoxelWorld::chunk_to_world(chunk.position());
 
     // Generate SDF from voxel data
     let sdf = generate_sdf(chunk, world);
@@ -754,6 +758,11 @@ pub fn generate_chunk_mesh_surface_nets(
                 local_pos.y * VOXEL_SIZE,
                 local_pos.z * VOXEL_SIZE,
             ]);
+            let world_pos = Vec3::new(
+                chunk_origin.x as f32 + local_pos.x,
+                chunk_origin.y as f32 + local_pos.y,
+                chunk_origin.z as f32 + local_pos.z,
+            );
 
             // Get normal for this vertex, with fallback for invalid normals
             let normal = buffer.normals.get(i).copied().unwrap_or([0.0, 1.0, 0.0]);
@@ -795,7 +804,7 @@ pub fn generate_chunk_mesh_surface_nets(
             };
 
             // Compute triplanar UVs that tile within the atlas tile
-            let uv = compute_triplanar_uv(safe_pos, normal, atlas_idx);
+            let uv = compute_triplanar_uv(world_pos, normal, atlas_idx);
             solid_mesh.uvs.push(uv);
 
             // Default white vertex colors (could add AO later)
