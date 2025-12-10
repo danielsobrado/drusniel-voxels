@@ -78,12 +78,12 @@ pub fn configure_atlas_sampler(
 }
 
 /// Setup triplanar terrain material for surface nets meshes with PBR textures
+/// Loads grass, rock, sand, and dirt texture sets for multi-material terrain
 pub fn setup_triplanar_material(
     mut commands: Commands,
     mut materials: ResMut<Assets<TriplanarMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
-    // Load PBR textures from assets/pbr/rock/
     let material_handle = materials.add(TriplanarMaterial {
         uniforms: TriplanarUniforms {
             base_color: LinearRgba::WHITE,
@@ -92,8 +92,18 @@ pub fn setup_triplanar_material(
             normal_intensity: 1.0,  // Full normal map strength
             _padding: 0.0,
         },
-        color_texture: Some(asset_server.load("pbr/rock/albedo.png")),
-        normal_texture: Some(asset_server.load("pbr/rock/normal.png")),
+        // Grass textures (for TopSoil top faces)
+        grass_albedo: Some(asset_server.load("pbr/grass/albedo.png")),
+        grass_normal: Some(asset_server.load("pbr/grass/normal.png")),
+        // Rock textures (for Rock, Bedrock, cliffs)
+        rock_albedo: Some(asset_server.load("pbr/rock/albedo.png")),
+        rock_normal: Some(asset_server.load("pbr/rock/normal.png")),
+        // Sand textures
+        sand_albedo: Some(asset_server.load("pbr/sand/albedo.png")),
+        sand_normal: Some(asset_server.load("pbr/sand/normal.png")),
+        // Dirt textures (for SubSoil, sides)
+        dirt_albedo: Some(asset_server.load("pbr/dirt/albedo.png")),
+        dirt_normal: Some(asset_server.load("pbr/dirt/normal.png")),
     });
 
     commands.insert_resource(TriplanarMaterialHandle {

@@ -31,28 +31,51 @@ impl Default for TriplanarUniforms {
     }
 }
 
-/// Custom triplanar PBR terrain material with normal mapping
+/// Custom triplanar PBR terrain material with multiple terrain types
+/// Supports grass (0), dirt (1), rock (2), sand (4) based on atlas index in UV.x
 #[derive(Asset, TypePath, AsBindGroup, Clone, Debug)]
 pub struct TriplanarMaterial {
     #[uniform(0)]
     pub uniforms: TriplanarUniforms,
 
-    /// Albedo/diffuse texture with its sampler
+    // Grass textures (mat 0)
     #[texture(1)]
     #[sampler(2)]
-    pub color_texture: Option<Handle<Image>>,
-
-    /// Normal map texture (shares sampler at binding 2)
+    pub grass_albedo: Option<Handle<Image>>,
     #[texture(3)]
-    pub normal_texture: Option<Handle<Image>>,
+    pub grass_normal: Option<Handle<Image>>,
+
+    // Rock textures (mat 1)
+    #[texture(4)]
+    pub rock_albedo: Option<Handle<Image>>,
+    #[texture(5)]
+    pub rock_normal: Option<Handle<Image>>,
+
+    // Sand textures (mat 2)
+    #[texture(6)]
+    pub sand_albedo: Option<Handle<Image>>,
+    #[texture(7)]
+    pub sand_normal: Option<Handle<Image>>,
+
+    // Dirt textures (mat 3)
+    #[texture(8)]
+    pub dirt_albedo: Option<Handle<Image>>,
+    #[texture(9)]
+    pub dirt_normal: Option<Handle<Image>>,
 }
 
 impl Default for TriplanarMaterial {
     fn default() -> Self {
         Self {
             uniforms: TriplanarUniforms::default(),
-            color_texture: None,
-            normal_texture: None,
+            grass_albedo: None,
+            grass_normal: None,
+            rock_albedo: None,
+            rock_normal: None,
+            sand_albedo: None,
+            sand_normal: None,
+            dirt_albedo: None,
+            dirt_normal: None,
         }
     }
 }
