@@ -1,9 +1,11 @@
 pub mod wolf;
+pub mod rabbit;
 pub mod inventory;
 
 use bevy::prelude::*;
 
 pub use wolf::{Wolf, WolfSpawned};
+pub use rabbit::{Rabbit, RabbitSpawned};
 pub use inventory::{Inventory, ItemType, ItemDrop};
 
 /// Component for entities with health
@@ -88,9 +90,13 @@ impl Plugin for EntityPlugin {
         app
             .init_resource::<Inventory>()
             .init_resource::<WolfSpawned>()
+            .init_resource::<RabbitSpawned>()
+            .add_systems(Startup, rabbit::setup_rabbit_assets)
             .add_systems(Update, (
                 wolf::spawn_wolves,
                 wolf::animate_wolves,
+                rabbit::spawn_rabbits,
+                rabbit::animate_rabbits,
                 handle_death,
                 process_item_drops,
                 despawn_dead.after(process_item_drops),
