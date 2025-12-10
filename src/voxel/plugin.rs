@@ -5,7 +5,8 @@ use crate::voxel::meshing::{generate_chunk_mesh_with_mode, MeshSettings, MeshMod
 use crate::voxel::types::VoxelType;
 use crate::voxel::world::VoxelWorld;
 use crate::voxel::persistence::{self, WorldPersistence};
-use crate::rendering::materials::{VoxelMaterial, SurfaceNetsMaterial};
+use crate::rendering::materials::VoxelMaterial;
+use crate::rendering::triplanar_material::TriplanarMaterialHandle;
 
 pub struct VoxelPlugin;
 
@@ -528,18 +529,12 @@ fn mesh_dirty_chunks_system(
     mut world: ResMut<VoxelWorld>,
     mut meshes: ResMut<Assets<Mesh>>,
     blocky_material: Res<VoxelMaterial>,
-    surface_nets_material: Res<SurfaceNetsMaterial>,
+    triplanar_material: Res<TriplanarMaterialHandle>,
     water_material: Res<crate::rendering::materials::WaterMaterial>,
     mesh_settings: Res<MeshSettings>,
 ) {
     // Collect dirty chunks first to avoid borrowing issues
     let dirty_chunks: Vec<IVec3> = world.dirty_chunks().collect();
-
-    // Select material based on mesh mode
-    let solid_material = match mesh_settings.mode {
-        MeshMode::Blocky => blocky_material.handle.clone(),
-        MeshMode::SurfaceNets => surface_nets_material.handle.clone(),
-    };
 
     for chunk_pos in dirty_chunks {
         // Step 1: Generate mesh data using immutable borrow
@@ -569,12 +564,25 @@ fn mesh_dirty_chunks_system(
                 if let Some(entity) = chunk.mesh_entity() {
                     commands.entity(entity).insert(Mesh3d(mesh_handle));
                 } else {
-                    let entity = commands.spawn((
-                        Mesh3d(mesh_handle),
-                        MeshMaterial3d(solid_material.clone()),
-                        Transform::from_xyz(world_pos.x as f32, world_pos.y as f32, world_pos.z as f32),
-                        crate::voxel::meshing::ChunkMesh { chunk_position: chunk_pos },
-                    )).id();
+                    // Spawn with appropriate material based on mesh mode
+                    let entity = match mesh_settings.mode {
+                        MeshMode::Blocky => {
+                            commands.spawn((
+                                Mesh3d(mesh_handle),
+                                MeshMaterial3d(blocky_material.handle.clone()),
+                                Transform::from_xyz(world_pos.x as f32, world_pos.y as f32, world_pos.z as f32),
+                                crate::voxel::meshing::ChunkMesh { chunk_position: chunk_pos },
+                            )).id()
+                        }
+                        MeshMode::SurfaceNets => {
+                            commands.spawn((
+                                Mesh3d(mesh_handle),
+                                MeshMaterial3d(triplanar_material.handle.clone()),
+                                Transform::from_xyz(world_pos.x as f32, world_pos.y as f32, world_pos.z as f32),
+                                crate::voxel::meshing::ChunkMesh { chunk_position: chunk_pos },
+                            )).id()
+                        }
+                    };
                     chunk.set_mesh_entity(entity);
                 }
             }

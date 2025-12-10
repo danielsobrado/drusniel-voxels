@@ -803,9 +803,9 @@ pub fn generate_chunk_mesh_surface_nets(
                 }
             };
 
-            // Compute triplanar UVs that tile within the atlas tile
-            let uv = compute_triplanar_uv(world_pos, normal, atlas_idx);
-            solid_mesh.uvs.push(uv);
+            // Store atlas index in UV.x for shader-side triplanar computation
+            // UV.y is unused but available for future use (e.g., material blending weights)
+            solid_mesh.uvs.push([atlas_idx as f32, 0.0]);
 
             // Default white vertex colors (could add AO later)
             solid_mesh.colors.push([1.0, 1.0, 1.0, 1.0]);

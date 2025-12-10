@@ -1,15 +1,10 @@
 use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::prelude::*;
 use crate::rendering::atlas::TextureAtlas;
+use crate::rendering::triplanar_material::{TriplanarMaterial, TriplanarMaterialHandle, TriplanarUniforms};
 
 #[derive(Resource)]
 pub struct VoxelMaterial {
-    pub handle: Handle<StandardMaterial>,
-}
-
-/// Material for surface nets smooth terrain (opaque, no alpha testing)
-#[derive(Resource)]
-pub struct SurfaceNetsMaterial {
     pub handle: Handle<StandardMaterial>,
 }
 
@@ -38,21 +33,6 @@ pub fn setup_voxel_material(
 
     commands.insert_resource(VoxelMaterial {
         handle: material_handle,
-    });
-
-    // Surface nets material - fully opaque for smooth terrain (no alpha testing)
-    let surface_nets_handle = materials.add(StandardMaterial {
-        base_color_texture: Some(atlas.handle.clone()),
-        perceptual_roughness: 0.9,
-        metallic: 0.0,
-        reflectance: 0.1,
-        cull_mode: None,
-        alpha_mode: AlphaMode::Opaque, // No alpha testing - always render solid
-        ..default()
-    });
-
-    commands.insert_resource(SurfaceNetsMaterial {
-        handle: surface_nets_handle,
     });
 
     // Water material - semi-transparent blue with proper depth handling
@@ -95,5 +75,27 @@ pub fn configure_atlas_sampler(
         });
         *configured = true;
     }
+}
+
+/// Setup triplanar terrain material for surface nets meshes
+pub fn setup_triplanar_material(
+    mut commands: Commands,
+    mut materials: ResMut<Assets<TriplanarMaterial>>,
+    atlas: Res<TextureAtlas>,
+) {
+    let material_handle = materials.add(TriplanarMaterial {
+        uniforms: TriplanarUniforms {
+            base_color: LinearRgba::WHITE,
+            tex_scale: 4.0,        // 1 texture tile per 4 world units
+            blend_sharpness: 4.0,  // Moderate blend
+            atlas_size: 4.0,       // 4x4 atlas
+            padding: 0.03,         // 3% padding
+        },
+        color_texture: Some(atlas.handle.clone()),
+    });
+
+    commands.insert_resource(TriplanarMaterialHandle {
+        handle: material_handle,
+    });
 }
 
