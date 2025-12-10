@@ -15,8 +15,8 @@ pub struct TriplanarUniforms {
     pub blend_sharpness: f32,
     /// Normal map intensity (1.0 = full strength)
     pub normal_intensity: f32,
-    /// Padding for alignment
-    pub _padding: f32,
+    /// Parallax depth scale for displacement
+    pub parallax_scale: f32,
 }
 
 impl Default for TriplanarUniforms {
@@ -26,13 +26,12 @@ impl Default for TriplanarUniforms {
             tex_scale: 2.0,
             blend_sharpness: 4.0,
             normal_intensity: 1.0,
-            _padding: 0.0,
+            parallax_scale: 0.04,
         }
     }
 }
 
 /// Custom triplanar PBR terrain material with multiple terrain types
-/// Supports grass (0), dirt (1), rock (2), sand (4) based on atlas index in UV.x
 #[derive(Asset, TypePath, AsBindGroup, Clone, Debug)]
 pub struct TriplanarMaterial {
     #[uniform(0)]

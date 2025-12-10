@@ -90,7 +90,7 @@ pub fn setup_triplanar_material(
             tex_scale: 2.0,         // Higher resolution (1 tile per 2 world units)
             blend_sharpness: 4.0,   // Moderate blend between projections
             normal_intensity: 1.0,  // Full normal map strength
-            _padding: 0.0,
+            parallax_scale: 0.04,   // Subtle parallax depth
         },
         // Grass textures (for TopSoil top faces)
         grass_albedo: Some(asset_server.load("pbr/grass/albedo.png")),
