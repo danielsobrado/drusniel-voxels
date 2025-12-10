@@ -7,6 +7,8 @@
 *   **Surface Nets Improvements**: Addressed chunk seams and fixed UV mapping/repeat samplers for surface nets.
 *   **Material & Mesh Updates**: Ongoing updates to materials and mesh generation.
 
+![V0.3 Preview](docs/images/V0.3.jpg)
+
 ### V0.2
 *   **Procedural Generation**: Added procedural grass mesh patches.
 *   **Terrain & Environment**: Adjusted terrain balance by reducing sand beach areas; tweaked lighting and reintroduced water rendering.
