@@ -528,11 +528,17 @@ fn mesh_dirty_chunks_system(
     mut commands: Commands,
     mut world: ResMut<VoxelWorld>,
     mut meshes: ResMut<Assets<Mesh>>,
-    blocky_material: Res<VoxelMaterial>,
+    blocky_material: Option<Res<VoxelMaterial>>,
     triplanar_material: Res<TriplanarMaterialHandle>,
     water_material: Res<crate::rendering::materials::WaterMaterial>,
     mesh_settings: Res<MeshSettings>,
 ) {
+    // Bail out until the blocky material is ready to avoid panicking when resources are still loading.
+    let blocky_material = match blocky_material {
+        Some(mat) => mat,
+        None => return,
+    };
+
     // Collect dirty chunks first to avoid borrowing issues
     let dirty_chunks: Vec<IVec3> = world.dirty_chunks().collect();
 
@@ -612,4 +618,3 @@ fn mesh_dirty_chunks_system(
         }
     }
 }
-

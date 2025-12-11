@@ -47,7 +47,7 @@ fn apply_to_hierarchy(
 
     // Recurse into children
     if let Ok(kids) = children.get(entity) {
-        for &child in kids.iter() {
+        for child in kids.iter() {
             apply_to_hierarchy(child, children, material_handles, materials, style, prop_type);
         }
     }
@@ -55,8 +55,7 @@ fn apply_to_hierarchy(
 
 fn tweak_material(mat: &mut StandardMaterial, style: &super::StyleConfig, prop_type: PropType) {
     // Boost saturation for Valheim's vibrant look
-    let base = mat.base_color.to_srgba();
-    let hsla = base.to_hsla();
+    let hsla: Hsla = mat.base_color.into();
     let boosted_saturation = (hsla.saturation + style.saturation_boost).clamp(0.0, 1.0);
     let boosted = Hsla::new(hsla.hue, boosted_saturation, hsla.lightness, hsla.alpha);
     mat.base_color = boosted.into();

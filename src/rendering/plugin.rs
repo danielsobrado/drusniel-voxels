@@ -1,6 +1,5 @@
 use bevy::prelude::*;
-use crate::rendering::atlas::load_texture_atlas;
-use crate::rendering::materials::{configure_atlas_sampler, setup_voxel_material, setup_triplanar_material};
+use crate::rendering::materials::{setup_water_material, setup_triplanar_material}; // Removed setup_voxel_material, configure_atlas_sampler
 use crate::rendering::triplanar_material::TriplanarMaterial;
 
 pub struct RenderingPlugin;
@@ -10,14 +9,16 @@ impl Plugin for RenderingPlugin {
         app
             // Register TriplanarMaterial as a custom material type
             .add_plugins(MaterialPlugin::<TriplanarMaterial>::default())
+            // Register BlockyMaterial
+            .add_plugins(MaterialPlugin::<crate::rendering::blocky_material::BlockyMaterial>::default())
             .add_systems(Startup, (
-                load_texture_atlas,
-                setup_voxel_material,
+                crate::rendering::array_loader::start_loading_texture_arrays, 
+                setup_water_material,
                 setup_triplanar_material,
             ).chain())
             .add_systems(Update, (
-                configure_atlas_sampler,
                 crate::rendering::materials::configure_triplanar_textures,
+                crate::rendering::array_loader::create_texture_array,
             ));
     }
 }
