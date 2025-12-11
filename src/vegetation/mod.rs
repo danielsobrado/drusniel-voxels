@@ -10,6 +10,7 @@ use crate::voxel::types::{VoxelType, Voxel};
 use crate::voxel::meshing::ChunkMesh;
 use crate::rendering::materials::WaterMaterial;
 use crate::camera::controller::PlayerCamera;
+use crate::voxel::plugin::WATER_LEVEL;
 
 pub use grass_material::{GrassMaterial, GrassMaterialPlugin, GrassMaterialHandles};
 
@@ -471,6 +472,13 @@ pub fn spawn_grass_blades(
                                 // Check if this is a grass block with air above
                                 if voxel == VoxelType::TopSoil {
                                     let world_pos = chunk_origin + IVec3::new(x as i32, y as i32, z as i32);
+                                    
+                                    // Ensure we don't spawn grass underwater or right at the water edge
+                                    // +1.0 buffer ensures no grass spawns on blocks that are partially submerged or just touching water surface
+                                    if world_pos.y <= WATER_LEVEL + 1 {
+                                        continue;
+                                    }
+
                                     let above = world_pos + IVec3::Y;
 
                                     if let Some(above_voxel) = world.get_voxel(above) {
@@ -700,38 +708,39 @@ pub fn spawn_floating_particles(
 
     let camera_pos = camera_transform.translation;
 
-    // Larger particle mesh for better visibility
-    let particle_mesh = meshes.add(Sphere::new(0.25).mesh().build());
+    // Smaller particle mesh for subtlety
+    let particle_mesh = meshes.add(Sphere::new(0.08).mesh().build());
 
-    // Bright golden pollen material - very emissive for visibility
+    // Bright golden pollen material - translucent
     let pollen_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(1.0, 0.9, 0.4),
-        emissive: LinearRgba::new(5.0, 4.0, 1.5, 1.0),
-        alpha_mode: AlphaMode::Opaque,
+        base_color: Color::srgba(1.0, 0.9, 0.4, 0.3), // Translucent
+        emissive: LinearRgba::new(2.0, 1.8, 0.5, 1.0), // Reduced glow
+        alpha_mode: AlphaMode::Blend,
         unlit: true,
         ..default()
     });
 
-    // Bright white dust material
+    // Bright white dust material - translucent
     let dust_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(1.0, 1.0, 1.0),
-        emissive: LinearRgba::new(4.0, 4.0, 5.0, 1.0),
-        alpha_mode: AlphaMode::Opaque,
+        base_color: Color::srgba(1.0, 1.0, 1.0, 0.2), // Very translucent
+        emissive: LinearRgba::new(2.0, 2.0, 2.5, 1.0),
+        alpha_mode: AlphaMode::Blend,
         unlit: true,
         ..default()
     });
 
-    let particle_count = 200;
+    let particle_count = 20; // Reduced from 200
 
     for i in 0..particle_count {
         let hash1 = simple_hash(i * 17, i * 31);
         let hash2 = simple_hash(i * 23, i * 47);
         let hash3 = simple_hash(i * 13, i * 53);
 
-        // Spawn in a sphere around camera start position - closer to camera
-        let radius = 15.0 + hash1 * 50.0;
+        // Spawn in a sphere around camera start position - Not too close
+        // Radius 5.0 to 14.0
+        let radius = 5.0 + hash1 * 9.0; 
         let angle = hash2 * std::f32::consts::TAU;
-        let height = hash3 * 30.0 - 5.0; // -5 to +25 relative to camera
+        let height = (hash3 - 0.5) * 6.0; // -3 to +3 relative to camera
 
         let x = camera_pos.x + angle.cos() * radius;
         let z = camera_pos.z + angle.sin() * radius;
@@ -743,8 +752,8 @@ pub fn spawn_floating_particles(
             dust_material.clone()
         };
 
-        // Visible particle size - larger for debugging
-        let scale = 1.0 + hash2 * 1.0;
+        // Visible particle size - varied but small
+        let scale = 0.5 + hash2 * 0.8;
 
         commands.spawn((
             Mesh3d(particle_mesh.clone()),
@@ -754,11 +763,11 @@ pub fn spawn_floating_particles(
             FloatingParticle {
                 base_y: y,
                 phase: hash3 * std::f32::consts::TAU,
-                speed: 0.3 + hash1 * 0.5,
+                speed: 0.05 + hash1 * 0.05, // Extremely slow bobbing
                 drift: Vec3::new(
-                    (hash1 - 0.5) * 2.0,
+                    (hash1 - 0.5) * 0.1, // Barely moving drift
                     0.0,
-                    (hash2 - 0.5) * 2.0,
+                    (hash2 - 0.5) * 0.1,
                 ),
             },
         ));
@@ -782,32 +791,43 @@ pub fn animate_particles(
 
     for (mut transform, particle) in particles.iter_mut() {
         // Gentle bobbing motion
-        let bob = (t * particle.speed + particle.phase).sin() * 0.5;
-        transform.translation.y = particle.base_y + bob;
-
-        // Slow drift
-        transform.translation.x += particle.drift.x * time.delta_secs() * 0.3;
-        transform.translation.z += particle.drift.z * time.delta_secs() * 0.3;
-
-        // Wrap particles around player (keep them in view)
-        let dist_to_camera = Vec2::new(
-            transform.translation.x - camera_pos.x,
-            transform.translation.z - camera_pos.z,
-        ).length();
-
-        if dist_to_camera > 100.0 {
-            // Teleport to other side of player
-            let angle = simple_hash(
-                (transform.translation.x * 100.0) as i32,
-                (transform.translation.z * 100.0) as i32,
-            ) * std::f32::consts::TAU;
-            let new_radius = 30.0 + simple_hash(
-                (transform.translation.x * 50.0) as i32,
-                (transform.translation.z * 50.0) as i32,
-            ) * 40.0;
-            transform.translation.x = camera_pos.x + angle.cos() * new_radius;
-            transform.translation.z = camera_pos.z + angle.sin() * new_radius;
+        let bob = (t * particle.speed + particle.phase).sin() * 0.2; // Reduced bob amplitude
+        
+        // We calculate position relative to camera to keep them around
+        // Check distance
+        let dist_sq = transform.translation.distance_squared(camera_pos);
+        
+        // If too far (radius > 15), wrap to other side
+        if dist_sq > 225.0 { // 15^2
+             // Respawn logic: Teleport to OPPOSITE side of wrap boundary
+             // Simply move towards camera by 2x radius? No, that passes through.
+             // Just project random position within 10-15 radius in front of camera?
+             
+             // Simplest wrapping: If > 15m away, move to random position 10m away in current view direction?
+             // Or standard toroidal wrap relative to camera movement?
+             
+             // Let's just teleport them to a specific distance in front of the camera slightly randomized
+             let forward = camera_transform.forward();
+             let right = camera_transform.right();
+             let up = camera_transform.up();
+             
+             // Random offsets based on particle address (hacky but deterministic-ish)
+             let r1 = (transform.translation.x * 7.0).sin();
+             let r2 = (transform.translation.z * 13.0).cos();
+             
+             let new_pos = camera_pos 
+                + forward * (8.0 + r1 * 4.0) // 4 to 12m in front
+                + right * (r2 * 6.0)         // +/- 6m sideways
+                + up * (r1 * 4.0);           // +/- 4m vertical
+                
+             transform.translation = new_pos;
+        } else {
+             // Normal movement
+             transform.translation.y = particle.base_y + bob + (camera_pos.y - transform.translation.y) * 0.01; // Slowly follow camera Y
+             transform.translation.x += particle.drift.x * time.delta_secs() * 0.3;
+             transform.translation.z += particle.drift.z * time.delta_secs() * 0.3;
         }
+
     }
 }
 

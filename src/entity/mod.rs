@@ -97,6 +97,7 @@ impl Plugin for EntityPlugin {
                 wolf::animate_wolves,
                 rabbit::spawn_rabbits,
                 rabbit::animate_rabbits,
+                rabbit::fix_rabbit_textures,
                 handle_death,
                 process_item_drops,
                 despawn_dead.after(process_item_drops),

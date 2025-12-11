@@ -494,7 +494,8 @@ fn add_face_no_ao(
 
     // Inset water faces slightly to prevent them showing through terrain gaps
     // The smooth terrain mesh may not perfectly align with blocky water mesh
-    let inset = 0.05;
+    // Inset removed to prevent gaps between water blocks
+    let inset = 0.0;
 
     let (v0, v1, v2, v3, normal) = match face {
         Face::Top => (
@@ -637,6 +638,61 @@ fn generate_sdf(chunk: &Chunk, world: &VoxelWorld) -> [f32; 5832] { // 18^3 = 58
 
             if has_sign_change {
                 // At surface boundary, use a value between -0.5 and 0.5 for smoother interpolation
+                let neighbor_avg: f32 = neighbors.iter().sum::<f32>() / 6.0;
+                smoothed[i] = (current + neighbor_avg) * 0.5;
+            }
+        }
+    }
+
+    smoothed
+}
+
+/// Sample voxel from world or chunk, returns true if water
+fn sample_voxel_water(chunk: &Chunk, world: &VoxelWorld, chunk_origin: IVec3, px: u32, py: u32, pz: u32) -> bool {
+    let world_pos = chunk_origin + IVec3::new(px as i32 - 1, py as i32 - 1, pz as i32 - 1);
+
+    let voxel = if px >= 1 && px <= 16 && py >= 1 && py <= 16 && pz >= 1 && pz <= 16 {
+        chunk.get(UVec3::new(px - 1, py - 1, pz - 1))
+    } else {
+        world.get_voxel(world_pos).unwrap_or(VoxelType::Air)
+    };
+
+    voxel.is_liquid()
+}
+
+/// Generate an SDF array for water only
+fn generate_water_sdf(chunk: &Chunk, world: &VoxelWorld) -> [f32; 5832] {
+    let mut sdf = [1.0f32; PaddedChunkShape::USIZE];
+    let chunk_pos = chunk.position();
+    let chunk_origin = VoxelWorld::chunk_to_world(chunk_pos);
+
+    // First pass: set binary solid/air values
+    for i in 0..PaddedChunkShape::USIZE {
+        let [px, py, pz] = PaddedChunkShape::delinearize(i as u32);
+        let is_water = sample_voxel_water(chunk, world, chunk_origin, px, py, pz);
+        // SDF: negative inside water, positive in air
+        sdf[i] = if is_water { -1.0 } else { 1.0 };
+    }
+
+    // Second pass: smooth SDF values
+    let mut smoothed = sdf;
+    for i in 0..PaddedChunkShape::USIZE {
+        let [px, py, pz] = PaddedChunkShape::delinearize(i as u32);
+
+        if px > 0 && px < 17 && py > 0 && py < 17 && pz > 0 && pz < 17 {
+            let current = sdf[i];
+            let neighbors = [
+                sdf[PaddedChunkShape::linearize([px - 1, py, pz]) as usize],
+                sdf[PaddedChunkShape::linearize([px + 1, py, pz]) as usize],
+                sdf[PaddedChunkShape::linearize([px, py - 1, pz]) as usize],
+                sdf[PaddedChunkShape::linearize([px, py + 1, pz]) as usize],
+                sdf[PaddedChunkShape::linearize([px, py, pz - 1]) as usize],
+                sdf[PaddedChunkShape::linearize([px, py, pz + 1]) as usize],
+            ];
+
+            let has_sign_change = neighbors.iter().any(|&n| (n > 0.0) != (current > 0.0));
+
+            if has_sign_change {
                 let neighbor_avg: f32 = neighbors.iter().sum::<f32>() / 6.0;
                 smoothed[i] = (current + neighbor_avg) * 0.5;
             }
@@ -944,22 +1000,110 @@ pub fn generate_chunk_mesh_surface_nets(
         }
     }
 
-    // Water still uses blocky meshing for now
-    for x in 0..16 {
-        for y in 0..16 {
-            for z in 0..16 {
-                let local = UVec3::new(x, y, z);
-                let voxel = chunk.get(local);
+    // Generate Water Mesh using Surface Nets
+    // ======================================
+    let water_sdf = generate_water_sdf(chunk, world);
+    let mut water_buffer = SurfaceNetsBuffer::default();
+    surface_nets(
+        &water_sdf,
+        &PaddedChunkShape {},
+        [0; 3],  // Start at 0
+        [17; 3], // End at 17
+        &mut water_buffer,
+    );
 
-                if voxel.is_liquid() {
-                    check_water_face(chunk, world, local, Face::Top, &mut water_mesh, voxel);
-                    check_water_face(chunk, world, local, Face::Bottom, &mut water_mesh, voxel);
-                    check_water_face(chunk, world, local, Face::North, &mut water_mesh, voxel);
-                    check_water_face(chunk, world, local, Face::South, &mut water_mesh, voxel);
-                    check_water_face(chunk, world, local, Face::East, &mut water_mesh, voxel);
-                    check_water_face(chunk, world, local, Face::West, &mut water_mesh, voxel);
+    if !water_buffer.positions.is_empty() && !water_buffer.indices.is_empty() {
+        for tri_idx in (0..water_buffer.indices.len()).step_by(3) {
+            let i0 = water_buffer.indices[tri_idx] as usize;
+            let i1 = water_buffer.indices[tri_idx + 1] as usize;
+            let i2 = water_buffer.indices[tri_idx + 2] as usize;
+
+            let pos0 = water_buffer.positions.get(i0).copied().unwrap_or([0.0; 3]);
+            let pos1 = water_buffer.positions.get(i1).copied().unwrap_or([0.0; 3]);
+            let pos2 = water_buffer.positions.get(i2).copied().unwrap_or([0.0; 3]);
+
+            let safe_pos = |pos: [f32; 3]| -> [f32; 3] {
+                [
+                    if pos[0].is_finite() { pos[0] } else { 0.0 },
+                    if pos[1].is_finite() { pos[1] } else { 0.0 },
+                    if pos[2].is_finite() { pos[2] } else { 0.0 },
+                ]
+            };
+            
+            let p0 = safe_pos(pos0);
+            let p1 = safe_pos(pos1);
+            let p2 = safe_pos(pos2);
+
+            let local0 = Vec3::new(p0[0] - 1.0, p0[1] - 1.0, p0[2] - 1.0);
+            let local1 = Vec3::new(p1[0] - 1.0, p1[1] - 1.0, p1[2] - 1.0);
+            let local2 = Vec3::new(p2[0] - 1.0, p2[1] - 1.0, p2[2] - 1.0);
+
+            // Calculate normals
+            let get_normal = |i: usize| -> [f32; 3] {
+                let n = water_buffer.normals.get(i).copied().unwrap_or([0.0, 1.0, 0.0]);
+                if n[0].is_finite() && n[1].is_finite() && n[2].is_finite() {
+                     // Invert normals because inside/outside is flipped (Negative is SOLID)
+                     // Standard SDF: Negative = Inside Solid, Positive = Outside
+                     // The surface_nets crate generates normals pointing towards Positive (Empty).
+                     // So normals point OUT of the water, which is correct for rendering.
+                     // But sometimes they need flipping depending on convention.
+                     // Let's stick to default for now.
+                    [n[0], n[1], n[2]]
+                } else {
+                    [0.0, 1.0, 0.0]
                 }
-            }
+            };
+            
+            // Average normal for the triangle
+            let n0 = get_normal(i0);
+            let n1 = get_normal(i1);
+            let n2 = get_normal(i2);
+            let avg_normal = [
+                (n0[0] + n1[0] + n2[0]) / 3.0,
+                (n0[1] + n1[1] + n2[1]) / 3.0,
+                (n0[2] + n1[2] + n2[2]) / 3.0,
+            ];
+            // Normalize
+            let len = (avg_normal[0].powi(2) + avg_normal[1].powi(2) + avg_normal[2].powi(2)).sqrt();
+            let final_normal = if len > 0.001 {
+                [avg_normal[0]/len, avg_normal[1]/len, avg_normal[2]/len]
+            } else {
+                [0.0, 1.0, 0.0] 
+            };
+
+            let start_idx = water_mesh.positions.len() as u32;
+
+            // Scale vertices
+            let scale_vertex = |local: Vec3| -> [f32; 3] {
+                let pos = Vec3::new(local.x * VOXEL_SIZE, local.y * VOXEL_SIZE, local.z * VOXEL_SIZE);
+                let scaled = chunk_center + (pos - chunk_center) * CHUNK_SCALE;
+                [scaled.x, scaled.y, scaled.z]
+            };
+
+            water_mesh.positions.push(scale_vertex(local0));
+            water_mesh.positions.push(scale_vertex(local1));
+            water_mesh.positions.push(scale_vertex(local2));
+
+            water_mesh.normals.push(final_normal);
+            water_mesh.normals.push(final_normal);
+            water_mesh.normals.push(final_normal);
+
+            // UVs
+            let get_uv = |p: Vec3| -> [f32; 2] {
+                let world_pos = chunk_origin.as_vec3() + p * VOXEL_SIZE;
+                [world_pos.x * 0.1, world_pos.z * 0.1]
+            };
+            water_mesh.uvs.push(get_uv(local0));
+            water_mesh.uvs.push(get_uv(local1));
+            water_mesh.uvs.push(get_uv(local2));
+
+            water_mesh.colors.push([1.0, 1.0, 1.0, 1.0]);
+            water_mesh.colors.push([1.0, 1.0, 1.0, 1.0]);
+            water_mesh.colors.push([1.0, 1.0, 1.0, 1.0]);
+
+            water_mesh.indices.push(start_idx);
+            water_mesh.indices.push(start_idx + 1);
+            water_mesh.indices.push(start_idx + 2);
         }
     }
 

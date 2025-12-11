@@ -30,17 +30,67 @@ pub struct RabbitSpawned {
     pub frame_counter: u32,
 }
 
-/// Resource to hold the loaded rabbit scene handle
 #[derive(Resource)]
-pub struct RabbitSceneHandle(pub Handle<Scene>);
+pub struct RabbitHandles {
+    pub scene: Handle<Scene>,
+    pub texture: Handle<Image>,
+}
 
-/// Setup system to load the rabbit GLTF model
 pub fn setup_rabbit_assets(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
-    let rabbit_scene: Handle<Scene> = asset_server.load("models/white_rabbit/scene.gltf#Scene0");
-    commands.insert_resource(RabbitSceneHandle(rabbit_scene));
+    let scene = asset_server.load("models/white_rabbit/scene.gltf#Scene0");
+    let texture = asset_server.load("models/white_rabbit/textures/Material_0_BaseColor.jpeg");
+    commands.insert_resource(RabbitHandles { scene, texture });
+}
+
+/// Marker component to track rabbits that have had their textures fixed
+#[derive(Component)]
+pub struct RabbitTextureFixed;
+
+pub fn fix_rabbit_textures(
+    mut commands: Commands,
+    rabbit_query: Query<(Entity, Option<&Children>), (With<Rabbit>, Without<RabbitTextureFixed>)>,
+    children_query: Query<&Children>,
+    material_query: Query<&MeshMaterial3d<StandardMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    handles: Option<Res<RabbitHandles>>,
+) {
+    let Some(handles) = handles else { return };
+
+    for (rabbit_entity, maybe_children) in rabbit_query.iter() {
+        // Scene hasn't spawned children yet, skip for now
+        let Some(children) = maybe_children else { continue };
+
+        let mut stack: Vec<Entity> = children.iter().collect();
+        let mut fixed_any = false;
+
+        while let Some(curr) = stack.pop() {
+            // Check for material
+            if let Ok(mat_handle) = material_query.get(curr) {
+                let handle_id = mat_handle.id();
+                if let Some(material) = materials.get_mut(handle_id) {
+                    // Force apply our texture to ensure it's set correctly
+                    material.base_color_texture = Some(handles.texture.clone());
+                    material.base_color = Color::WHITE;
+                    material.perceptual_roughness = 0.8;
+                    material.metallic = 0.0;
+                    fixed_any = true;
+                }
+            }
+
+            // Push children to continue traversal
+            if let Ok(kids) = children_query.get(curr) {
+                stack.extend(kids.iter());
+            }
+        }
+
+        // Mark this rabbit as having its texture fixed
+        if fixed_any {
+            commands.entity(rabbit_entity).insert(RabbitTextureFixed);
+        }
+    }
 }
 
 /// Spawn rabbits on the terrain
@@ -48,14 +98,14 @@ pub fn spawn_rabbits(
     mut commands: Commands,
     world: Res<VoxelWorld>,
     mut spawned: ResMut<RabbitSpawned>,
-    rabbit_scene: Option<Res<RabbitSceneHandle>>,
+    handles: Option<Res<RabbitHandles>>,
 ) {
     if spawned.spawned {
         return;
     }
 
-    // Wait for rabbit scene to be loaded
-    let Some(rabbit_scene) = rabbit_scene else {
+    // Wait for rabbit assets to be loaded
+    let Some(handles) = handles else {
         return;
     };
 
@@ -124,7 +174,7 @@ pub fn spawn_rabbits(
                             info!("  Spawning rabbit #{} at {:?} on {:?}", rabbit_count + 1, spawn_pos, current_voxel);
 
                             commands.spawn((
-                                SceneRoot(rabbit_scene.0.clone()),
+                                SceneRoot(handles.scene.clone()),
                                 Transform::from_translation(spawn_pos)
                                     .with_rotation(Quat::from_rotation_y(rotation))
                                     .with_scale(Vec3::splat(0.5)),  // Scale down the model

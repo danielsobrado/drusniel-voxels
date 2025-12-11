@@ -7,6 +7,7 @@ use crate::voxel::world::VoxelWorld;
 use crate::voxel::persistence::{self, WorldPersistence};
 use crate::rendering::materials::VoxelMaterial;
 use crate::rendering::triplanar_material::TriplanarMaterialHandle;
+use crate::voxel::gravity::GravityPlugin;
 
 pub struct VoxelPlugin;
 
@@ -32,6 +33,7 @@ impl Plugin for VoxelPlugin {
             .insert_resource(WorldPersistence { force_regenerate: false, ..default() })
             .add_systems(Startup, setup_voxel_world)
             .add_systems(Update, mesh_dirty_chunks_system);
+            // .add_plugins(GravityPlugin); // Deactivated due to performance impact
     }
 }
 
@@ -307,7 +309,7 @@ fn is_tree_leaves(world_x: i32, world_y: i32, world_z: i32) -> bool {
 }
 
 // Water level constant - areas below this height will be filled with water
-const WATER_LEVEL: i32 = 18;
+pub const WATER_LEVEL: i32 = 18;
 
 // Debug flat world toggle (disabled by default)
 const DEBUG_FLAT_WORLD: bool = false;
@@ -374,19 +376,19 @@ fn setup_voxel_world(
 
                     // Check for caves
                     // Caves disabled for debugging blue holes
-                    // if is_cave(world_x, world_y, world_z) && world_y < terrain_height - 3 {
-                    //     // Fill caves below water level with water
-                    //     let voxel = if world_y <= WATER_LEVEL {
-                    //         VoxelType::Water
-                    //     } else {
-                    //         VoxelType::Air
-                    //     };
-                    //     if voxel == VoxelType::Water {
-                    //         water_count += 1;
-                    //     }
-                    //     chunk.set(UVec3::new(x as u32, y as u32, z as u32), voxel);
-                    //     continue;
-                    // }
+                    if is_cave(world_x, world_y, world_z) && world_y < terrain_height - 3 {
+                        // Fill caves below water level with water
+                        let voxel = if world_y <= WATER_LEVEL {
+                            VoxelType::Water
+                        } else {
+                            VoxelType::Air
+                        };
+                        if voxel == VoxelType::Water {
+                            water_count += 1;
+                        }
+                        chunk.set(UVec3::new(x as u32, y as u32, z as u32), voxel);
+                        continue;
+                    }
 
                     // Check for tree trunks
                     if is_tree_trunk(world_x, world_y, world_z, terrain_height) {
@@ -449,7 +451,15 @@ fn setup_voxel_world(
                             }
                             3 => {
                                 // Clay deposits
-                                if depth <= 2 {
+                                if near_water {
+                                    if depth <= 2 {
+                                        VoxelType::Sand
+                                    } else if depth <= 6 {
+                                        VoxelType::Clay
+                                    } else {
+                                        VoxelType::Rock
+                                    }
+                                } else if depth <= 2 {
                                     VoxelType::TopSoil
                                 } else if depth <= 6 {
                                     VoxelType::Clay
