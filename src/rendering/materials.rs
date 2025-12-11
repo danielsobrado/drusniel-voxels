@@ -1,5 +1,6 @@
 use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::prelude::*;
+use bevy::render::render_resource::Face;
 use crate::rendering::atlas::TextureAtlas;
 use crate::rendering::triplanar_material::{TriplanarMaterial, TriplanarMaterialHandle, TriplanarUniforms};
 
@@ -24,8 +25,8 @@ pub fn setup_voxel_material(
         perceptual_roughness: 0.9,
         metallic: 0.0,
         reflectance: 0.1,
-        // Disable backface culling to visualize all faces while we debug missing quads
-        cull_mode: None,
+        // Enable backface culling for performance now that meshing is stable
+        cull_mode: Some(Face::Back),
         // Use a mask so leaves/foliage can leverage alpha but keep opaque blocks solid
         alpha_mode: AlphaMode::Mask(0.5),
         ..default()
@@ -110,5 +111,55 @@ pub fn setup_triplanar_material(
     commands.insert_resource(TriplanarMaterialHandle {
         handle: material_handle,
     });
+}
+
+/// Ensure all triplanar textures use Repeat address mode for seamless tiling
+pub fn configure_triplanar_textures(
+    mat_handle: Option<Res<TriplanarMaterialHandle>>,
+    materials: Res<Assets<TriplanarMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    mut configured: Local<bool>,
+) {
+    if *configured {
+        return;
+    }
+
+    if let Some(handle) = mat_handle {
+        if let Some(material) = materials.get(&handle.handle) {
+            let textures = [
+                &material.grass_albedo, &material.grass_normal,
+                &material.rock_albedo, &material.rock_normal,
+                &material.sand_albedo, &material.sand_normal,
+                &material.dirt_albedo, &material.dirt_normal,
+            ];
+
+            let mut all_loaded = true;
+            for tex_opt in textures {
+                if let Some(tex_handle) = tex_opt {
+                    if let Some(image) = images.get_mut(tex_handle) {
+                        // Set sampler to Repeat for tiling
+                        image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+                            address_mode_u: ImageAddressMode::Repeat,
+                            address_mode_v: ImageAddressMode::Repeat,
+                            address_mode_w: ImageAddressMode::Repeat,
+                            mag_filter: ImageFilterMode::Linear,
+                            min_filter: ImageFilterMode::Linear,
+                            mipmap_filter: ImageFilterMode::Linear,
+                            ..default()
+                        });
+                    } else {
+                        // Texture not loaded yet
+                        all_loaded = false;
+                    }
+                }
+            }
+
+            // Only mark as configured if we successfully processed all textures (or at least checked them)
+            // If some are not loaded, we wait for next frame
+            if all_loaded {
+                *configured = true;
+            }
+        }
+    }
 }
 

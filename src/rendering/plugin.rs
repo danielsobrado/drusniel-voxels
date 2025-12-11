@@ -15,6 +15,9 @@ impl Plugin for RenderingPlugin {
                 setup_voxel_material,
                 setup_triplanar_material,
             ).chain())
-            .add_systems(Update, configure_atlas_sampler);
+            .add_systems(Update, (
+                configure_atlas_sampler,
+                crate::rendering::materials::configure_triplanar_textures,
+            ));
     }
 }
