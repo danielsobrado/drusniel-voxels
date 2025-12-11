@@ -2,8 +2,9 @@
 
 ## Version History
 
-### V0.3 (Work in Progress)
+### V0.3
 *   **PBR Materials & Parallax Mapping**: Implemented PBR material blending and parallax occlusion mapping, specifically enhancing rock textures.
+*   **Texture Splatting**: Added smooth triplanar material blending (texture splatting) using vertex weights for seamless terrain transitions.
 *   **Surface Nets Improvements**: Addressed chunk seams and fixed UV mapping/repeat samplers for surface nets.
 *   **Material & Mesh Updates**: Ongoing updates to materials and mesh generation.
 
