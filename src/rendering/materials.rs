@@ -1,12 +1,12 @@
 use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::prelude::*;
-use bevy::render::render_resource::Face;
-use crate::rendering::atlas::TextureAtlas;
 use crate::rendering::triplanar_material::{TriplanarMaterial, TriplanarMaterialHandle, TriplanarUniforms};
+
+use crate::rendering::blocky_material::BlockyMaterial;
 
 #[derive(Resource)]
 pub struct VoxelMaterial {
-    pub handle: Handle<StandardMaterial>,
+    pub handle: Handle<BlockyMaterial>,
 }
 
 #[derive(Resource)]
@@ -14,28 +14,16 @@ pub struct WaterMaterial {
     pub handle: Handle<StandardMaterial>,
 }
 
-pub fn setup_voxel_material(
+// setup_voxel_material is now largely superseded by array_loader which creates the BlockyMaterial
+// However, we might keep this signature if we want to initialize other things or just empty.
+// For now, let's essentially empty it out or remove it from plugin if not needed.
+// But wait, the system logic likely expects VoxelMaterial resource to exist.
+// Let's modify array_loader to insert VoxelMaterial resource instead of its own internal handle.
+
+pub fn setup_water_material(
     mut commands: Commands,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    atlas: Res<TextureAtlas>,
 ) {
-    // Solid block material
-    let material_handle = materials.add(StandardMaterial {
-        base_color_texture: Some(atlas.handle.clone()),
-        perceptual_roughness: 0.9,
-        metallic: 0.0,
-        reflectance: 0.1,
-        // Enable backface culling for performance now that meshing is stable
-        cull_mode: Some(Face::Back),
-        // Use a mask so leaves/foliage can leverage alpha but keep opaque blocks solid
-        alpha_mode: AlphaMode::Mask(0.5),
-        ..default()
-    });
-
-    commands.insert_resource(VoxelMaterial {
-        handle: material_handle,
-    });
-
     // Water material - semi-transparent blue with proper depth handling
     // Use positive depth_bias to push water behind terrain, preventing visible seams
     let water_handle = materials.add(StandardMaterial {
@@ -56,28 +44,7 @@ pub fn setup_voxel_material(
 }
 
 /// Ensure the atlas uses a repeat/mipmapped sampler so tiled terrain does not clamp or alias
-pub fn configure_atlas_sampler(
-    atlas: Res<TextureAtlas>,
-    mut images: ResMut<Assets<Image>>,
-    mut configured: Local<bool>,
-) {
-    if *configured {
-        return;
-    }
 
-    if let Some(image) = images.get_mut(&atlas.handle) {
-        image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
-            address_mode_u: ImageAddressMode::Repeat,
-            address_mode_v: ImageAddressMode::Repeat,
-            address_mode_w: ImageAddressMode::Repeat,
-            mag_filter: ImageFilterMode::Linear,
-            min_filter: ImageFilterMode::Linear,
-            mipmap_filter: ImageFilterMode::Linear,
-            ..default()
-        });
-        *configured = true;
-    }
-}
 
 /// Setup triplanar terrain material for surface nets meshes with PBR textures
 /// Loads grass, rock, sand, and dirt texture sets for multi-material terrain
@@ -162,4 +129,3 @@ pub fn configure_triplanar_textures(
         }
     }
 }
-
