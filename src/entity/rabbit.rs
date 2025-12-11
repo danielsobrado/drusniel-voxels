@@ -100,7 +100,7 @@ pub fn spawn_rabbits(
             positions_checked += 1;
 
             // Find surface height - search from top down
-            for y in (5..60).rev() {
+            for y in (1..64).rev() {
                 let pos = IVec3::new(world_x, y, world_z);
                 let above_pos = IVec3::new(world_x, y + 1, world_z);
 
@@ -168,6 +168,7 @@ fn simple_hash(x: i32, z: i32) -> f32 {
 /// Animate rabbits with hopping behavior
 pub fn animate_rabbits(
     time: Res<Time>,
+    world: Res<VoxelWorld>,
     mut rabbits: Query<(&mut Rabbit, &mut Transform), Without<super::Dead>>,
 ) {
     let dt = time.delta_secs();
@@ -175,12 +176,11 @@ pub fn animate_rabbits(
     for (mut rabbit, mut transform) in rabbits.iter_mut() {
         rabbit.hop_timer -= dt;
 
+        // Apply horizontal movement if hopping
         if rabbit.is_hopping {
-            // Continue hop animation
-            rabbit.hop_progress += dt * 3.0;  // Hop speed
+            rabbit.hop_progress += dt * 3.0; // Hop speed
 
             if rabbit.hop_progress >= 1.0 {
-                // End hop
                 rabbit.is_hopping = false;
                 rabbit.hop_progress = 0.0;
                 rabbit.hop_timer = 0.5 + simple_hash(
@@ -188,12 +188,9 @@ pub fn animate_rabbits(
                     (transform.translation.z * 100.0) as i32,
                 ) * 2.0;
             } else {
-                // Hop motion - parabolic arc
-                let hop_height = (rabbit.hop_progress * std::f32::consts::PI).sin() * 0.3;
                 let forward_motion = rabbit.hop_direction * dt * 2.0;
-                
-                transform.translation += forward_motion;
-                transform.translation.y += hop_height * dt * 5.0;
+                transform.translation.x += forward_motion.x;
+                transform.translation.z += forward_motion.z;
             }
         } else if rabbit.hop_timer <= 0.0 {
             // Start new hop
@@ -215,5 +212,30 @@ pub fn animate_rabbits(
                 transform.rotation = target_rotation;
             }
         }
+
+        // Apply Gravity / Snap to Floor
+        let x = transform.translation.x.floor() as i32;
+        let z = transform.translation.z.floor() as i32;
+        let start_y = (transform.translation.y + 1.0).floor() as i32; // Search from slightly above
+        
+        // Find ground
+        let mut ground_y = 0.0; // Fallback to 0 if no ground found (void)
+        for y in (0..=start_y).rev() {
+            if let Some(voxel) = world.get_voxel(IVec3::new(x, y, z)) {
+                if voxel.is_solid() {
+                    ground_y = y as f32 + 1.0;
+                    break;
+                }
+            }
+        }
+
+        // Calculate vertical position (Ground + Hop Arc)
+        let hop_height = if rabbit.is_hopping {
+            (rabbit.hop_progress * std::f32::consts::PI).sin() * 0.5
+        } else {
+            0.0
+        };
+
+        transform.translation.y = ground_y + hop_height;
     }
 }
