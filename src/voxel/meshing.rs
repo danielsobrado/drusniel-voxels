@@ -832,29 +832,82 @@ pub fn generate_chunk_mesh_surface_nets(
                 [0.0, 1.0, 0.0]
             };
 
-            // Sample voxel at triangle centroid for consistent material
-            let voxel = sample_voxel_for_texture(chunk, world, centroid);
+            // Calculate material weights for each vertex
+            let compute_vertex_weights = |local_pos: Vec3| -> [f32; 4] {
+                let mut weights = [0.0f32; 4];
+                let mut total_weight = 0.0;
+                
+                // Check 8 neighbors of the cell containing the vertex
+                let base_x = local_pos.x.floor() as i32;
+                let base_y = local_pos.y.floor() as i32;
+                let base_z = local_pos.z.floor() as i32;
+                
+                let chunk_pos = chunk.position();
+                let chunk_origin = VoxelWorld::chunk_to_world(chunk_pos);
 
-            // Determine atlas index based on voxel type and surface orientation
-            let atlas_idx = if avg_normal[1] > 0.5 {
-                // Top-facing surface
-                match voxel {
-                    VoxelType::TopSoil => 0,  // Grass top
-                    _ => voxel.atlas_index(),
+                for dz in 0..2 {
+                    for dy in 0..2 {
+                        for dx in 0..2 {
+                            let lx = base_x + dx;
+                            let ly = base_y + dy;
+                            let lz = base_z + dz;
+                            
+                            let voxel = if lx >= 0 && lx < 16 && ly >= 0 && ly < 16 && lz >= 0 && lz < 16 {
+                                chunk.get(UVec3::new(lx as u32, ly as u32, lz as u32))
+                            } else {
+                                let wx = chunk_origin.x + lx;
+                                let wy = chunk_origin.y + ly;
+                                let wz = chunk_origin.z + lz;
+                                world.get_voxel(IVec3::new(wx, wy, wz)).unwrap_or(VoxelType::Air)
+                            };
+
+                            if voxel != VoxelType::Air && voxel != VoxelType::Water {
+                                let mat_idx = match voxel {
+                                    VoxelType::TopSoil => 0, // Grass
+                                    
+                                    VoxelType::Rock | VoxelType::Bedrock | 
+                                    VoxelType::DungeonWall | VoxelType::DungeonFloor => 1, // Rock
+                                    
+                                    VoxelType::Sand => 2, // Sand
+                                    
+                                    // Everything else maps to Dirt
+                                    VoxelType::SubSoil | VoxelType::Clay | 
+                                    VoxelType::Wood | VoxelType::Leaves | _ => 3, 
+                                };
+                                
+                                // Distance-based weighting (closer voxels have more influence)
+                                // This assumes local_pos is within the cell [base, base+1]
+                                // let dist_sq = (lx as f32 - local_pos.x).powi(2) + 
+                                //               (ly as f32 - local_pos.y).powi(2) + 
+                                //               (lz as f32 - local_pos.z).powi(2);
+                                // let weight = 1.0 / (dist_sq + 0.001);
+                                
+                                // Simple binary presence also works well for Surface Nets
+                                let weight = 1.0;
+                                
+                                weights[mat_idx] += weight;
+                                total_weight += weight;
+                            }
+                        }
+                    }
                 }
-            } else if avg_normal[1] < -0.5 {
-                // Bottom-facing surface
-                match voxel {
-                    VoxelType::TopSoil => 1,  // Dirt
-                    _ => voxel.atlas_index(),
-                }
-            } else {
-                // Side-facing surface
-                match voxel {
-                    VoxelType::TopSoil => 7,  // Grass side
-                    _ => voxel.atlas_index(),
+                
+                if total_weight > 0.0 {
+                    [
+                        weights[0] / total_weight,
+                        weights[1] / total_weight,
+                        weights[2] / total_weight,
+                        weights[3] / total_weight,
+                    ]
+                } else {
+                    // Default to dirt if isolated (shouldn't happen for valid mesh)
+                    [0.0, 0.0, 0.0, 1.0] 
                 }
             };
+
+            let weights0 = compute_vertex_weights(local0);
+            let weights1 = compute_vertex_weights(local1);
+            let weights2 = compute_vertex_weights(local2);
 
             // Add all 3 vertices for this triangle (not shared)
             let base_idx = solid_mesh.positions.len() as u32;
@@ -869,20 +922,20 @@ pub fn generate_chunk_mesh_surface_nets(
             // Vertex 0
             solid_mesh.positions.push(scale_vertex(local0));
             solid_mesh.normals.push(normal0);
-            solid_mesh.uvs.push([atlas_idx as f32, 0.0]);
-            solid_mesh.colors.push([1.0, 1.0, 1.0, 1.0]);
+            solid_mesh.uvs.push([0.0, 0.0]); // UVs not used for splatting logic
+            solid_mesh.colors.push(weights0);
 
             // Vertex 1
             solid_mesh.positions.push(scale_vertex(local1));
             solid_mesh.normals.push(normal1);
-            solid_mesh.uvs.push([atlas_idx as f32, 0.0]);
-            solid_mesh.colors.push([1.0, 1.0, 1.0, 1.0]);
+            solid_mesh.uvs.push([0.0, 0.0]);
+            solid_mesh.colors.push(weights1);
 
             // Vertex 2
             solid_mesh.positions.push(scale_vertex(local2));
             solid_mesh.normals.push(normal2);
-            solid_mesh.uvs.push([atlas_idx as f32, 0.0]);
-            solid_mesh.colors.push([1.0, 1.0, 1.0, 1.0]);
+            solid_mesh.uvs.push([0.0, 0.0]);
+            solid_mesh.colors.push(weights2);
 
             // Add triangle indices (sequential since vertices are not shared)
             solid_mesh.indices.push(base_idx);

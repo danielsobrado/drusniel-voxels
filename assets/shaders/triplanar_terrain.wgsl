@@ -145,39 +145,52 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let world_normal = normalize(in.world_normal);
     let view_dir = normalize(-world_pos);
     
-    let atlas_idx = i32(floor(in.uv.x + 0.5));
-    let base_mat = get_base_material(atlas_idx);
+    // Use vertex colors as material weights
+    let mat_weights = in.color; 
     
+    // Normalize weights to ensure unity
+    let w_total = dot(mat_weights, vec4<f32>(1.0));
+    let w = mat_weights / max(w_total, 0.001);
+
     let weights = triplanar_weights(world_normal);
     let uv_yz = compute_uv(world_pos.yz);
     let uv_xz = compute_uv(world_pos.xz);
     let uv_xy = compute_uv(world_pos.xy);
 
-    // Slope and height-based blending
-    let slope = 1.0 - world_normal.y;
-    let height = world_pos.y;
-    
-    var secondary_mat = base_mat;
-    var blend = 0.0;
-    
-    if (base_mat == 0) {
-        if (slope > 0.3) { secondary_mat = 1; blend = smoothstep(0.3, 0.7, slope); }
-        else if (height < 20.0) { secondary_mat = 3; blend = smoothstep(20.0, 15.0, height) * 0.5; }
-    } else if (base_mat == 3 && slope < 0.3 && height > 18.0) {
-        secondary_mat = 0; blend = smoothstep(0.3, 0.1, slope) * smoothstep(18.0, 22.0, height);
-    } else if (base_mat == 2) {
-        secondary_mat = 3;
-        blend = fract(sin(dot(world_pos.xz, vec2(12.9898, 78.233))) * 43758.5453) * 0.3;
+    var albedo = vec4<f32>(0.0);
+    var final_normal = vec3<f32>(0.0);
+
+    // Optimization: Only sample materials with significant weight?
+    // Note: Branching on non-uniform values with textureSample can cause artifacts.
+    // Ideally we'd use textureSampleGrad, but for now we'll sample all active materials.
+    // Modern GPUs handle this reasonable well.
+
+    // Material 0: Grass
+    if (w.x > 0.001) {
+        albedo += sample_albedo_tp(uv_yz, uv_xz, uv_xy, weights, 0, view_dir) * w.x;
+        final_normal += sample_normal_tp(uv_yz, uv_xz, uv_xy, weights, world_normal, 0, view_dir) * w.x;
+    }
+
+    // Material 1: Rock
+    if (w.y > 0.001) {
+        albedo += sample_albedo_tp(uv_yz, uv_xz, uv_xy, weights, 1, view_dir) * w.y;
+        final_normal += sample_normal_tp(uv_yz, uv_xz, uv_xy, weights, world_normal, 1, view_dir) * w.y;
+    }
+
+    // Material 2: Sand
+    if (w.z > 0.001) {
+        albedo += sample_albedo_tp(uv_yz, uv_xz, uv_xy, weights, 2, view_dir) * w.z;
+        final_normal += sample_normal_tp(uv_yz, uv_xz, uv_xy, weights, world_normal, 2, view_dir) * w.z;
+    }
+
+    // Material 3: Dirt
+    if (w.w > 0.001) {
+        albedo += sample_albedo_tp(uv_yz, uv_xz, uv_xy, weights, 3, view_dir) * w.w;
+        final_normal += sample_normal_tp(uv_yz, uv_xz, uv_xy, weights, world_normal, 3, view_dir) * w.w;
     }
     
-    // Sample with parallax for rock material
-    let a1 = sample_albedo_tp(uv_yz, uv_xz, uv_xy, weights, base_mat, view_dir);
-    let a2 = sample_albedo_tp(uv_yz, uv_xz, uv_xy, weights, secondary_mat, view_dir);
-    let n1 = sample_normal_tp(uv_yz, uv_xz, uv_xy, weights, world_normal, base_mat, view_dir);
-    let n2 = sample_normal_tp(uv_yz, uv_xz, uv_xy, weights, world_normal, secondary_mat, view_dir);
-    
-    var albedo = mix(a1, a2, blend) * uniforms.base_color;
-    let blended_n = normalize(mix(n1, n2, blend));
+    albedo = albedo * uniforms.base_color;
+    let blended_n = normalize(final_normal);
 
     // Lighting
     let light_dir = normalize(vec3(0.4, 0.8, 0.3));
