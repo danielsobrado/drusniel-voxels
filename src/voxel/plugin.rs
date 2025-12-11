@@ -29,7 +29,7 @@ impl Plugin for VoxelPlugin {
             // Use SurfaceNets for smooth terrain meshing (change to Blocky for Minecraft-style)
             .insert_resource(MeshSettings { mode: MeshMode::SurfaceNets })
             // World persistence settings (set force_regenerate to true to regenerate)
-            .insert_resource(WorldPersistence { force_regenerate: true, ..default() })
+            .insert_resource(WorldPersistence { force_regenerate: false, ..default() })
             .add_systems(Startup, setup_voxel_world)
             .add_systems(Update, mesh_dirty_chunks_system);
     }

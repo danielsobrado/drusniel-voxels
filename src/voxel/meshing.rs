@@ -745,7 +745,7 @@ pub fn generate_chunk_mesh_surface_nets(
     // Scale factor to slightly enlarge chunks so they overlap at boundaries
     // This prevents gaps (sky showing through) at chunk seams caused by
     // independent SDF smoothing per chunk producing slightly different vertex positions
-    const CHUNK_SCALE: f32 = 1.002; // 0.2% larger
+    const CHUNK_SCALE: f32 = 1.01; // 1.0% larger overlap
     let chunk_center = Vec3::new(8.0, 8.0, 8.0) * VOXEL_SIZE; // Center of 16x16x16 chunk
 
     // Generate SDF from voxel data
