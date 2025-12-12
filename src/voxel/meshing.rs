@@ -694,7 +694,8 @@ fn generate_water_sdf(chunk: &Chunk, world: &VoxelWorld) -> [f32; 5832] {
 
             if has_sign_change {
                 let neighbor_avg: f32 = neighbors.iter().sum::<f32>() / 6.0;
-                smoothed[i] = (current + neighbor_avg) * 0.5;
+                // More smoothing for water (0.4 blend vs 0.5 for terrain)
+                smoothed[i] = current * 0.4 + neighbor_avg * 0.6;
             }
         }
     }
@@ -1097,9 +1098,9 @@ pub fn generate_chunk_mesh_surface_nets(
             water_mesh.uvs.push(get_uv(local1));
             water_mesh.uvs.push(get_uv(local2));
 
-            water_mesh.colors.push([1.0, 1.0, 1.0, 1.0]);
-            water_mesh.colors.push([1.0, 1.0, 1.0, 1.0]);
-            water_mesh.colors.push([1.0, 1.0, 1.0, 1.0]);
+            water_mesh.colors.push([1.0, 1.0, 1.0, 0.7]);
+            water_mesh.colors.push([1.0, 1.0, 1.0, 0.7]);
+            water_mesh.colors.push([1.0, 1.0, 1.0, 0.7]);
 
             water_mesh.indices.push(start_idx);
             water_mesh.indices.push(start_idx + 1);

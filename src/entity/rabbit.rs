@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy_mesh::VertexAttributeValues;
 use crate::voxel::world::VoxelWorld;
 use crate::voxel::types::{VoxelType, Voxel};
 use super::Health;
@@ -54,10 +55,19 @@ pub fn fix_rabbit_textures(
     rabbit_query: Query<(Entity, Option<&Children>), (With<Rabbit>, Without<RabbitTextureFixed>)>,
     children_query: Query<&Children>,
     material_query: Query<&MeshMaterial3d<StandardMaterial>>,
+    mesh_query: Query<&Mesh3d>, 
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>, // CHANGED to ResMut
+    images: Res<Assets<Image>>,
     handles: Option<Res<RabbitHandles>>,
 ) {
     let Some(handles) = handles else { return };
+
+    // Check if texture is loaded
+    let texture_state = images.get(&handles.texture).is_some();
+    if !texture_state {
+        // info_once!("Rabbit texture is NOT fully loaded yet.");
+    }
 
     for (rabbit_entity, maybe_children) in rabbit_query.iter() {
         // Scene hasn't spawned children yet, skip for now
@@ -67,17 +77,143 @@ pub fn fix_rabbit_textures(
         let mut fixed_any = false;
 
         while let Some(curr) = stack.pop() {
+            let mut mesh_uv_missing = false;
+
+            // Check mesh for UVs and Generate if missing
+            if let Ok(mesh_handle) = mesh_query.get(curr) {
+                if let Some(mesh) = meshes.get_mut(mesh_handle) {
+                    if !mesh.contains_attribute(Mesh::ATTRIBUTE_UV_0) {
+                        mesh_uv_missing = true;
+                        info!("Mesh {:?} missing UVs. Generating procedural UVs...", mesh_handle.id());
+                        
+                        // Generate simple planar UVs (XZ plane)
+                        if let Some(VertexAttributeValues::Float32x3(positions)) =
+                            mesh.attribute(Mesh::ATTRIBUTE_POSITION).cloned()
+                        {
+                            let uvs: Vec<[f32; 2]> = positions.iter()
+                                .map(|pos| [pos[0], pos[2]]) // Planar mapping X, Z
+                                .collect();
+                            
+                            mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+                            info!("Inserted generated UVs into mesh.");
+                        }
+                    }
+                }
+            }
+
             // Check for material
             if let Ok(mat_handle) = material_query.get(curr) {
                 let handle_id = mat_handle.id();
-                if let Some(material) = materials.get_mut(handle_id) {
-                    // Force apply our texture to ensure it's set correctly
-                    material.base_color_texture = Some(handles.texture.clone());
-                    material.base_color = Color::WHITE;
-                    material.perceptual_roughness = 0.8;
-                    material.metallic = 0.0;
-                    fixed_any = true;
+                
+                // Strategy Switch: Create a NEW material and replace the component
+                let new_material = StandardMaterial {
+                    base_color_texture: Some(handles.texture.clone()),
+                    base_color: Color::WHITE, // Set back to WHITE to see texture
+                    perceptual_roughness: 0.9,
+                    metallic: 0.0,
+                    alpha_mode: AlphaMode::Opaque,
+                    ..default()
+                };
+
+                let new_handle = materials.add(new_material);
+                
+                if !fixed_any {
+                    info!("Replacing material for rabbit entity {:?}.", curr);
+                    
+                    // Inspect and Fix UVs
+                     if let Ok(mesh_handle) = mesh_query.get(curr) {
+                        if let Some(mesh) = meshes.get_mut(mesh_handle) {
+                             let mut needs_uv_fix = false;
+
+                             // Check if UVs are missing OR degenerate (all zeros)
+                             if let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute(Mesh::ATTRIBUTE_UV_0) {
+                                let non_zero_count = uvs.iter().filter(|uv| uv[0] != 0.0 || uv[1] != 0.0).count();
+                                info!("Mesh UV check: {} total, {} non-zero.", uvs.len(), non_zero_count);
+                                
+                                // If fewer than 10 vertices have non-zero UVs, it's definitely broken
+                                if non_zero_count < 10 { 
+                                    needs_uv_fix = true;
+                                    info!("Detected degenerate/zero UVs. Forcing regeneration.");
+                                }
+                             } else {
+                                 needs_uv_fix = true; // Missing attribute entirely
+                                 info!("Missing UV attribute. Forcing regeneration.");
+                             }
+
+                             // Generate Cylindrical UVs (Better for animal bodies than planar)
+                             if needs_uv_fix {
+                                if let Some(VertexAttributeValues::Float32x3(positions)) = 
+                                    mesh.attribute(Mesh::ATTRIBUTE_POSITION) 
+                                {
+                                    // 1. Calculate Bounds
+                                    let mut min_x = f32::MAX;
+                                    let mut max_x = f32::MIN;
+                                    let mut min_y = f32::MAX;
+                                    let mut max_y = f32::MIN;
+                                    let mut min_z = f32::MAX;
+                                    let mut max_z = f32::MIN;
+                                    
+                                    for pos in positions.iter() {
+                                        min_x = min_x.min(pos[0]);
+                                        max_x = max_x.max(pos[0]);
+                                        min_y = min_y.min(pos[1]);
+                                        max_y = max_y.max(pos[1]);
+                                        min_z = min_z.min(pos[2]);
+                                        max_z = max_z.max(pos[2]);
+                                    }
+
+                                    // Use Bounding Box Center (better for geometry mapping than centroid)
+                                    let center_x = (min_x + max_x) / 2.0;
+                                    let center_z = (min_z + max_z) / 2.0;
+                                    let center_y = (min_y + max_y) / 2.0;
+
+                                    let height = max_y - min_y;
+                                    // Use Box Radius for spherical approximation
+                                    let _radius = ((max_x - min_x).max(max_z - min_z)) / 2.0;
+
+                                    // Check Texture Image Size if possible
+                                    let uv_scale = 1.0; // Reset to 1.0 to see original pattern
+                                    if let Some(img) = images.get(&handles.texture) {
+                                        info!("Rabbit Texture Info: {:?} (Size: {:?})", handles.texture.id(), img.size());
+                                    }
+
+                                    let uvs: Vec<[f32; 2]> = positions.iter()
+                                        .map(|pos| {
+                                            // Relativize position
+                                            let dx = pos[0] - center_x;
+                                            let dy = pos[1] - center_y; // Center Y for spherical
+                                            let dz = pos[2] - center_z;
+
+                                            // Spherical Mapping (Project from center of bounding box)
+                                            // More uniform for blobby shapes like rabbits
+                                            let r = (dx*dx + dy*dy + dz*dz).sqrt();
+                                            
+                                            // Longitude (Angle around Y) - U
+                                            let angle = dz.atan2(dx); 
+                                            let u = (angle / (std::f32::consts::PI * 2.0)) + 0.5;
+                                            
+                                            // Latitude (Angle from North Pole) - V
+                                            let lat = (dy / r).acos(); // 0 to PI
+                                            let v = lat / std::f32::consts::PI;
+
+                                            [u * uv_scale, v * uv_scale]
+                                        })
+                                        .collect();
+                                    
+                                    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, VertexAttributeValues::Float32x2(uvs));
+                                    info!("Inserted generated Spherical UVs into mesh {:?} (Bounds Center).", mesh_handle.id());
+                                    
+                                    if let Err(e) = mesh.generate_tangents() {
+                                        warn!("Failed to generate tangents: {:?}", e);
+                                    }
+                                }
+                             }
+                        }
+                     }
                 }
+
+                commands.entity(curr).insert(MeshMaterial3d(new_handle));
+                fixed_any = true;
             }
 
             // Push children to continue traversal
@@ -89,6 +225,7 @@ pub fn fix_rabbit_textures(
         // Mark this rabbit as having its texture fixed
         if fixed_any {
             commands.entity(rabbit_entity).insert(RabbitTextureFixed);
+            info!("Fixed texture for rabbit {:?}", rabbit_entity);
         }
     }
 }

@@ -27,14 +27,14 @@ pub fn setup_water_material(
     // Water material - semi-transparent blue with proper depth handling
     // Use positive depth_bias to push water behind terrain, preventing visible seams
     let water_handle = materials.add(StandardMaterial {
-        base_color: Color::srgba(0.0, 0.3, 0.8, 0.7), // Semi-transparent blue
+        base_color: Color::srgba(0.1, 0.4, 0.7, 0.6),
         alpha_mode: AlphaMode::Blend,
-        perceptual_roughness: 0.05, // Very smooth surface
+        perceptual_roughness: 0.02,  // Very smooth
         metallic: 0.0,
-        reflectance: 0.8, // High reflection for water look
-        double_sided: true, // Visible from below
-        cull_mode: None, // Render both sides
-        depth_bias: 1.0, // Push water behind terrain to hide seams
+        reflectance: 0.9,            // High reflection
+        double_sided: true,
+        cull_mode: None,
+        depth_bias: 0.5,             // Reduce z-fighting
         ..default()
     });
 
