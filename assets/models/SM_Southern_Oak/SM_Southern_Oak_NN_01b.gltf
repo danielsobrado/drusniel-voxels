@@ -1,0 +1,515 @@
+{
+	"asset":
+	{
+		"version": "2.0",
+		"generator": "Unreal Engine 5.6.1"
+	},
+	"scene": 0,
+	"accessors": [
+		{
+			"bufferView": 0,
+			"count": 1077,
+			"type": "SCALAR",
+			"componentType": 5123
+		},
+		{
+			"bufferView": 1,
+			"count": 355,
+			"type": "VEC3",
+			"componentType": 5126,
+			"min": [ -3.7311523, -1.28221631, -3.54565239 ],
+			"max": [ 3.08727312, 5.25436497, 3.41551876 ]
+		},
+		{
+			"bufferView": 2,
+			"count": 355,
+			"type": "VEC3",
+			"componentType": 5126
+		},
+		{
+			"bufferView": 3,
+			"count": 355,
+			"type": "VEC4",
+			"componentType": 5126
+		},
+		{
+			"bufferView": 4,
+			"count": 355,
+			"type": "VEC2",
+			"componentType": 5126
+		},
+		{
+			"bufferView": 5,
+			"count": 355,
+			"type": "VEC2",
+			"componentType": 5126
+		},
+		{
+			"bufferView": 6,
+			"count": 35211,
+			"type": "SCALAR",
+			"componentType": 5123
+		},
+		{
+			"bufferView": 7,
+			"count": 26239,
+			"type": "VEC3",
+			"componentType": 5126,
+			"min": [ -29.4717255, 3.50348687, -20.2593803 ],
+			"max": [ 22.4309368, 30.2472153, 21.9136181 ]
+		},
+		{
+			"bufferView": 8,
+			"count": 26239,
+			"type": "VEC3",
+			"componentType": 5126
+		},
+		{
+			"bufferView": 9,
+			"count": 26239,
+			"type": "VEC4",
+			"componentType": 5126
+		},
+		{
+			"bufferView": 10,
+			"count": 26239,
+			"type": "VEC2",
+			"componentType": 5126
+		},
+		{
+			"bufferView": 11,
+			"count": 26239,
+			"type": "VEC2",
+			"componentType": 5126
+		},
+		{
+			"bufferView": 12,
+			"count": 7740,
+			"type": "SCALAR",
+			"componentType": 5123
+		},
+		{
+			"bufferView": 13,
+			"count": 2213,
+			"type": "VEC3",
+			"componentType": 5126,
+			"min": [ -22.8523922, 3.39952254, -14.5422544 ],
+			"max": [ 17.4869385, 26.5385151, 15.0953703 ]
+		},
+		{
+			"bufferView": 14,
+			"count": 2213,
+			"type": "VEC3",
+			"componentType": 5126
+		},
+		{
+			"bufferView": 15,
+			"count": 2213,
+			"type": "VEC4",
+			"componentType": 5126
+		},
+		{
+			"bufferView": 16,
+			"count": 2213,
+			"type": "VEC2",
+			"componentType": 5126
+		},
+		{
+			"bufferView": 17,
+			"count": 2213,
+			"type": "VEC2",
+			"componentType": 5126
+		}
+	],
+	"buffers": [
+		{
+			"uri": "SM_Southern_Oak_NN_01b.bin",
+			"byteLength": 1701252
+		}
+	],
+	"bufferViews": [
+		{
+			"buffer": 0,
+			"byteLength": 2154,
+			"target": 34963
+		},
+		{
+			"buffer": 0,
+			"byteLength": 4260,
+			"byteOffset": 2156,
+			"target": 34962
+		},
+		{
+			"buffer": 0,
+			"byteLength": 4260,
+			"byteOffset": 6416,
+			"target": 34962
+		},
+		{
+			"buffer": 0,
+			"byteLength": 5680,
+			"byteOffset": 10676,
+			"target": 34962
+		},
+		{
+			"buffer": 0,
+			"byteLength": 2840,
+			"byteOffset": 16356,
+			"target": 34962
+		},
+		{
+			"buffer": 0,
+			"byteLength": 2840,
+			"byteOffset": 19196,
+			"target": 34962
+		},
+		{
+			"buffer": 0,
+			"byteLength": 70422,
+			"byteOffset": 22036,
+			"target": 34963
+		},
+		{
+			"buffer": 0,
+			"byteLength": 314868,
+			"byteOffset": 92460,
+			"target": 34962
+		},
+		{
+			"buffer": 0,
+			"byteLength": 314868,
+			"byteOffset": 407328,
+			"target": 34962
+		},
+		{
+			"buffer": 0,
+			"byteLength": 419824,
+			"byteOffset": 722196,
+			"target": 34962
+		},
+		{
+			"buffer": 0,
+			"byteLength": 209912,
+			"byteOffset": 1142020,
+			"target": 34962
+		},
+		{
+			"buffer": 0,
+			"byteLength": 209912,
+			"byteOffset": 1351932,
+			"target": 34962
+		},
+		{
+			"buffer": 0,
+			"byteLength": 15480,
+			"byteOffset": 1561844,
+			"target": 34963
+		},
+		{
+			"buffer": 0,
+			"byteLength": 26556,
+			"byteOffset": 1577324,
+			"target": 34962
+		},
+		{
+			"buffer": 0,
+			"byteLength": 26556,
+			"byteOffset": 1603880,
+			"target": 34962
+		},
+		{
+			"buffer": 0,
+			"byteLength": 35408,
+			"byteOffset": 1630436,
+			"target": 34962
+		},
+		{
+			"buffer": 0,
+			"byteLength": 17704,
+			"byteOffset": 1665844,
+			"target": 34962
+		},
+		{
+			"buffer": 0,
+			"byteLength": 17704,
+			"byteOffset": 1683548,
+			"target": 34962
+		}
+	],
+	"images": [
+		{
+			"uri": "MI_Southern_Oak_NN_01b_BaseColor.png"
+		},
+		{
+			"uri": "MI_Southern_Oak_NN_01b_MetallicRoughness.png"
+		},
+		{
+			"uri": "MI_Southern_Oak_NN_01b_Normal.png"
+		},
+		{
+			"uri": "MI_Southern_Oak_NN_01b_Occlusion.png"
+		},
+		{
+			"uri": "MI_Southern_Oak_NN_01b_Specular.png"
+		},
+		{
+			"uri": "MI_Southern_Oak_NN_01d_BaseColor.png"
+		},
+		{
+			"uri": "MI_Southern_Oak_NN_01d_MetallicRoughness.png"
+		},
+		{
+			"uri": "MI_Southern_Oak_NN_01d_Normal.png"
+		},
+		{
+			"uri": "MI_Southern_Oak_NN_01d_Occlusion.png"
+		},
+		{
+			"uri": "MI_Southern_Oak_NN_01e_BaseColor.png"
+		},
+		{
+			"uri": "MI_Southern_Oak_NN_01e_MetallicRoughness.png"
+		},
+		{
+			"uri": "MI_Southern_Oak_NN_01e_Normal.png"
+		},
+		{
+			"uri": "MI_Southern_Oak_NN_01e_Occlusion.png"
+		},
+		{
+			"uri": "MI_Southern_Oak_NN_01e_Specular.png"
+		}
+	],
+	"materials": [
+		{
+			"name": "MI_Southern_Oak_NN_01b",
+			"pbrMetallicRoughness":
+			{
+				"baseColorTexture":
+				{
+					"index": 0
+				},
+				"metallicRoughnessTexture":
+				{
+					"index": 1
+				}
+			},
+			"normalTexture":
+			{
+				"index": 2
+			},
+			"occlusionTexture":
+			{
+				"index": 3
+			},
+			"extensions":
+			{
+				"KHR_materials_specular":
+				{
+					"specularTexture":
+					{
+						"index": 4
+					}
+				}
+			}
+		},
+		{
+			"name": "MI_Southern_Oak_NN_01d",
+			"pbrMetallicRoughness":
+			{
+				"baseColorTexture":
+				{
+					"index": 5
+				},
+				"metallicRoughnessTexture":
+				{
+					"index": 6
+				}
+			},
+			"normalTexture":
+			{
+				"index": 7
+			},
+			"occlusionTexture":
+			{
+				"index": 8
+			},
+			"alphaMode": "MASK",
+			"alphaCutoff": 0.333299994,
+			"doubleSided": true,
+			"extensions":
+			{
+				"KHR_materials_specular":
+				{
+					"specularFactor": 0.498039246
+				}
+			}
+		},
+		{
+			"name": "MI_Southern_Oak_NN_01e",
+			"pbrMetallicRoughness":
+			{
+				"baseColorTexture":
+				{
+					"index": 9
+				},
+				"metallicRoughnessTexture":
+				{
+					"index": 10
+				}
+			},
+			"normalTexture":
+			{
+				"index": 11
+			},
+			"occlusionTexture":
+			{
+				"index": 12
+			},
+			"extensions":
+			{
+				"KHR_materials_specular":
+				{
+					"specularTexture":
+					{
+						"index": 13
+					}
+				}
+			}
+		}
+	],
+	"meshes": [
+		{
+			"name": "SM_Southern_Oak_NN_01b",
+			"primitives": [
+				{
+					"attributes":
+					{
+						"POSITION": 1,
+						"NORMAL": 2,
+						"TANGENT": 3,
+						"TEXCOORD_0": 4,
+						"TEXCOORD_1": 5
+					},
+					"indices": 0,
+					"material": 0
+				},
+				{
+					"attributes":
+					{
+						"POSITION": 7,
+						"NORMAL": 8,
+						"TANGENT": 9,
+						"TEXCOORD_0": 10,
+						"TEXCOORD_1": 11
+					},
+					"indices": 6,
+					"material": 1
+				},
+				{
+					"attributes":
+					{
+						"POSITION": 13,
+						"NORMAL": 14,
+						"TANGENT": 15,
+						"TEXCOORD_0": 16,
+						"TEXCOORD_1": 17
+					},
+					"indices": 12,
+					"material": 2
+				}
+			]
+		}
+	],
+	"nodes": [
+		{
+			"mesh": 0
+		}
+	],
+	"samplers": [
+		{
+			"minFilter": 9987,
+			"magFilter": 9729
+		}
+	],
+	"scenes": [
+		{
+			"nodes": [ 0 ]
+		}
+	],
+	"textures": [
+		{
+			"name": "MI_Southern_Oak_NN_01b_BaseColor",
+			"sampler": 0,
+			"source": 0
+		},
+		{
+			"name": "MI_Southern_Oak_NN_01b_MetallicRoughness",
+			"sampler": 0,
+			"source": 1
+		},
+		{
+			"name": "MI_Southern_Oak_NN_01b_Normal",
+			"sampler": 0,
+			"source": 2
+		},
+		{
+			"name": "MI_Southern_Oak_NN_01b_Occlusion",
+			"sampler": 0,
+			"source": 3
+		},
+		{
+			"name": "MI_Southern_Oak_NN_01b_Specular",
+			"sampler": 0,
+			"source": 4
+		},
+		{
+			"name": "MI_Southern_Oak_NN_01d_BaseColor",
+			"sampler": 0,
+			"source": 5
+		},
+		{
+			"name": "MI_Southern_Oak_NN_01d_MetallicRoughness",
+			"sampler": 0,
+			"source": 6
+		},
+		{
+			"name": "MI_Southern_Oak_NN_01d_Normal",
+			"sampler": 0,
+			"source": 7
+		},
+		{
+			"name": "MI_Southern_Oak_NN_01d_Occlusion",
+			"sampler": 0,
+			"source": 8
+		},
+		{
+			"name": "MI_Southern_Oak_NN_01e_BaseColor",
+			"sampler": 0,
+			"source": 9
+		},
+		{
+			"name": "MI_Southern_Oak_NN_01e_MetallicRoughness",
+			"sampler": 0,
+			"source": 10
+		},
+		{
+			"name": "MI_Southern_Oak_NN_01e_Normal",
+			"sampler": 0,
+			"source": 11
+		},
+		{
+			"name": "MI_Southern_Oak_NN_01e_Occlusion",
+			"sampler": 0,
+			"source": 12
+		},
+		{
+			"name": "MI_Southern_Oak_NN_01e_Specular",
+			"sampler": 0,
+			"source": 13
+		}
+	],
+	"extensionsUsed": [
+		"KHR_materials_specular"
+	]
+}

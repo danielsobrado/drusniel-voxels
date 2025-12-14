@@ -40,6 +40,10 @@ pub struct RocksSpawned(pub bool);
 #[derive(Resource, Default)]
 pub struct ParticlesSpawned(pub bool);
 
+/// Resource to track if trees have been spawned
+#[derive(Resource, Default)]
+pub struct TreesSpawned(pub bool);
+
 /// Marker that a voxel chunk mesh already has a procedural grass instance attached
 #[derive(Component)]
 pub struct ChunkGrassAttached;
@@ -831,6 +835,150 @@ pub fn animate_particles(
     }
 }
 
+/// Spawn trees on the terrain
+pub fn spawn_trees(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    world: Res<VoxelWorld>,
+    mut spawned: ResMut<TreesSpawned>,
+    player_query: Query<&Transform, With<crate::camera::controller::PlayerCamera>>,
+    time: Res<Time>,
+) {
+    if spawned.0 {
+        return;
+    }
+
+    // Delay spawning to ensure world is fully loaded and populated
+    if time.elapsed_secs() < 10.0 {
+        return;
+    }
+
+    let Some(player_transform) = player_query.iter().next() else {
+        return;
+    };
+    
+    // Calculate player chunk to ensure we are searching where the world is actually loaded
+    let player_pos = player_transform.translation;
+    let player_chunk = VoxelWorld::world_to_chunk(player_pos.as_ivec3());
+    
+    // Check if player's chunk is loaded
+    if world.get_chunk(player_chunk).is_none() {
+        return;
+    }
+
+    spawned.0 = true;
+    info!("Starting tree generation. Target: 15. Player at {}", player_pos);
+
+    // DEBUG PROBE
+    let test_pos = IVec3::new(24, 20, 24);
+    if let Some(voxel) = world.get_voxel(test_pos) {
+        info!("TREE PROBE at {:?}: {:?}", test_pos, voxel);
+    } else {
+        warn!("TREE PROBE at {:?}: NONE (Chunk missing?)", test_pos);
+    }
+
+    // Load the tree model
+    let tree_scene: Handle<Scene> = asset_server.load("models/SM_Southern_Oak/SM_Southern_Oak_NN_01b.gltf#Scene0");
+
+    let mut tree_count = 0;
+    let target_trees = 15;
+    
+    // Collect all potential chunk positions
+    let mut chunks_to_scan = Vec::new();
+    for x in 0..32 {
+        for z in 0..32 {
+            for y in 0..4 {
+                chunks_to_scan.push(IVec3::new(x, y, z));
+            }
+        }
+    }
+
+    // Sort by distance to player's chunk to prioritize nearby spawning
+    let player_chunk = VoxelWorld::world_to_chunk(player_pos.as_ivec3());
+    chunks_to_scan.sort_by_key(|pos| {
+        let dist_sq = (*pos - player_chunk).as_vec3().length_squared() as i32;
+        dist_sq
+    });
+
+    let mut chunks_checked = 0;
+    let mut solid_found = 0;
+
+    // Iterate sorted chunks
+    for chunk_pos in chunks_to_scan {
+        if tree_count >= target_trees {
+            break;
+        }
+
+        if let Some(chunk) = world.get_chunk(chunk_pos) {
+            chunks_checked += 1;
+            let chunk_world_origin = VoxelWorld::chunk_to_world(chunk_pos);
+            let mut trees_in_chunk = 0;
+            let max_trees_per_chunk = 3; // Prevent clumping in a single chunk
+
+            // Scan columns in this chunk
+            // We use a randomized stride to avoid grid artifacts
+            for x in 0..16 {
+                for z in 0..16 {
+                        if tree_count >= target_trees || trees_in_chunk >= max_trees_per_chunk { break; }
+                        
+                        let world_x = chunk_world_origin.x + x as i32;
+                        let world_z = chunk_world_origin.z + z as i32;
+                        
+                        let hash = simple_hash(world_x * 73, world_z * 89);
+                        
+                        // force scan every column for debug
+                        if true { 
+                            // Scan world column for surface (top-down within this chunk's vertical bounds)
+                            // Note: We scan the local Y range 0..15 adjusted to world coords
+                            for y in (0..16).rev() {
+                                let world_y = chunk_world_origin.y + y as i32;
+                                let world_pos = IVec3::new(world_x, world_y, world_z);
+                                
+                                if let Some(voxel) = world.get_voxel(world_pos) {
+                                    if voxel.is_solid() && voxel != VoxelType::Water {
+                                        solid_found += 1;
+                                        
+                                        // Check air above
+                                        let above = world_pos + IVec3::Y;
+                                        let above_voxel = world.get_voxel(above).unwrap_or(VoxelType::Air);
+                                        let above2 = world_pos + IVec3::new(0, 2, 0);
+                                        let above2_voxel = world.get_voxel(above2).unwrap_or(VoxelType::Air);
+
+                                        if !above_voxel.is_solid() && !above2_voxel.is_solid() {
+                                            let scale = 0.8 + hash * 0.4;
+                                            let rotation = hash * std::f32::consts::TAU;
+
+                                            commands.spawn((
+                                                SceneRoot(tree_scene.clone()),
+                                                Transform::from_xyz(
+                                                    world_x as f32 + 0.5,
+                                                    world_y as f32 + 1.0,
+                                                    world_z as f32 + 0.5,
+                                                )
+                                                .with_rotation(Quat::from_rotation_y(rotation))
+                                                .with_scale(Vec3::splat(scale)),
+                                            ));
+                                            tree_count += 1;
+                                            trees_in_chunk += 1;
+                                            info!("Spawned tree {} at {}", tree_count, world_pos);
+                                            break; // One tree per column
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                }
+            }
+        }
+    }
+
+    if tree_count < target_trees {
+        warn!("Finished scanning. Spawned {}/{} trees. Checked {} chunks. Found {} solid surfaces.", tree_count, target_trees, chunks_checked, solid_found);
+    } else {
+        info!("Successfully spawned all {} trees. Checked {} chunks.", tree_count, chunks_checked);
+    }
+}
+
 
 /// Plugin for vegetation and props
 pub struct VegetationPlugin;
@@ -843,6 +991,7 @@ impl Plugin for VegetationPlugin {
             .init_resource::<GrassSpawned>()
             .init_resource::<RocksSpawned>()
             .init_resource::<ParticlesSpawned>()
+            .init_resource::<TreesSpawned>()
             .add_systems(Startup, setup_grass_patch_assets)
             // Run in Update to ensure world is populated
             .add_systems(
@@ -850,6 +999,7 @@ impl Plugin for VegetationPlugin {
                 (
                     attach_procedural_grass_to_chunks,
                     spawn_rock_props,
+                    spawn_trees,
                     spawn_floating_particles,
                     animate_particles,
                 ),
