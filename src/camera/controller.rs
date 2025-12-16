@@ -1,13 +1,14 @@
-use bevy::prelude::*;
-use bevy::input::mouse::MouseMotion;
-use bevy::core_pipeline::tonemapping::Tonemapping;
+use crate::menu::PauseMenuState;
+use crate::voxel::types::Voxel;
+use crate::voxel::world::VoxelWorld;
 use bevy::core_pipeline::Skybox;
+use bevy::core_pipeline::tonemapping::Tonemapping;
+use bevy::input::mouse::MouseMotion;
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::post_process::bloom::Bloom;
+use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions};
 use bevy_water::ImageReformat;
-use crate::voxel::world::VoxelWorld;
-use crate::voxel::types::Voxel;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum CameraMode {
@@ -60,13 +61,13 @@ impl Default for PlayerCamera {
 }
 
 pub fn spawn_camera(mut commands: Commands, asset_server: Res<AssetServer>) {
-    // Load the skybox cubemap image with cubemap reformat 
+    // Load the skybox cubemap image with cubemap reformat
     let skybox_image = ImageReformat::cubemap(
         &mut commands,
         &asset_server,
         "textures/table_mountain_2_puresky_4k_cubemap.jpg",
     );
-    
+
     commands.spawn((
         Camera3d::default(),
         Bloom {
@@ -100,21 +101,21 @@ pub fn player_camera_system(
     time: Res<Time>,
     mut windows: Query<(&mut Window, &mut CursorOptions)>,
     world: Res<VoxelWorld>,
+    pause_menu: Res<PauseMenuState>,
 ) {
     let Ok((_window, mut cursor_options)) = windows.single_mut() else {
         return;
     };
     let dt = time.delta_secs();
 
-    // Toggle cursor lock with Escape
-    if keys.just_pressed(KeyCode::Escape) {
-        cursor_options.visible = !cursor_options.visible;
-        cursor_options.grab_mode = if cursor_options.visible {
-            CursorGrabMode::None
-        } else {
-            CursorGrabMode::Locked
-        };
+    if pause_menu.open {
+        cursor_options.visible = true;
+        cursor_options.grab_mode = CursorGrabMode::None;
+        return;
     }
+
+    cursor_options.visible = false;
+    cursor_options.grab_mode = CursorGrabMode::Locked;
 
     for (mut transform, mut camera) in query.iter_mut() {
         // Toggle between fly and walk mode with Tab
@@ -239,7 +240,7 @@ fn walk_movement(
 
     // Set horizontal velocity
     let mut horizontal_velocity = move_dir.normalize_or_zero() * speed;
-    
+
     // Friction / damping if no input? (Optional, currently instant stop)
     if move_dir == Vec3::ZERO {
         horizontal_velocity = Vec3::ZERO;
@@ -250,7 +251,7 @@ fn walk_movement(
 
     // Ground check with smooth terrain height
     let terrain_height = get_terrain_height(world, transform.translation);
-    
+
     // Check if we are grounded
     // We are grounded if our feet are slightly below or just above the terrain height
     if let Some(h) = terrain_height {
@@ -260,7 +261,7 @@ fn walk_movement(
             camera.velocity.y = 0.0;
             // Snap gently or hard? Hard snap prevents jitter.
             // But we must snap to h + player_height
-             transform.translation.y = h + camera.player_height;
+            transform.translation.y = h + camera.player_height;
         } else {
             camera.grounded = false;
         }
@@ -283,30 +284,43 @@ fn walk_movement(
 
     // Calculate intended movement
     let movement = camera.velocity * dt;
-    
+
     // Collision Detection & Step-Up Logic
     let mut new_pos = transform.translation;
     let step_height = 1.1; // Max height to automatically step up
 
     // Separate axes to allow sliding against walls
-    
+
     // --- X Axis ---
     let target_x = new_pos.x + movement.x;
     // Check collision at feet and head
     // Note: We use a slightly smaller radius for collision to allow getting close to walls
     let col_radius = camera.player_radius * 0.9;
-    
-    let can_move_x_flat = !check_collision(world, Vec3::new(target_x, new_pos.y, new_pos.z), col_radius, camera.player_height);
-    
+
+    let can_move_x_flat = !check_collision(
+        world,
+        Vec3::new(target_x, new_pos.y, new_pos.z),
+        col_radius,
+        camera.player_height,
+    );
+
     if can_move_x_flat {
         new_pos.x = target_x;
-    } else if camera.grounded { 
+    } else if camera.grounded {
         // Try step up
-        let can_step_x = !check_collision(world, Vec3::new(target_x, new_pos.y + step_height, new_pos.z), col_radius, camera.player_height);
+        let can_step_x = !check_collision(
+            world,
+            Vec3::new(target_x, new_pos.y + step_height, new_pos.z),
+            col_radius,
+            camera.player_height,
+        );
         if can_step_x {
             // We can move X if we go up.
             // Check the terrain height at the target X to snap exactly there
-            if let Some(h) = get_terrain_height(world, Vec3::new(target_x, new_pos.y + step_height, new_pos.z)) {
+            if let Some(h) = get_terrain_height(
+                world,
+                Vec3::new(target_x, new_pos.y + step_height, new_pos.z),
+            ) {
                 if h - (new_pos.y - camera.player_height) <= step_height + 0.1 {
                     new_pos.x = target_x;
                     new_pos.y = h + camera.player_height; // Teleport up to the step
@@ -316,20 +330,33 @@ fn walk_movement(
             camera.velocity.x = 0.0;
         }
     } else {
-         camera.velocity.x = 0.0;
+        camera.velocity.x = 0.0;
     }
 
     // --- Z Axis ---
     let target_z = new_pos.z + movement.z;
-    let can_move_z_flat = !check_collision(world, Vec3::new(new_pos.x, new_pos.y, target_z), col_radius, camera.player_height);
-    
+    let can_move_z_flat = !check_collision(
+        world,
+        Vec3::new(new_pos.x, new_pos.y, target_z),
+        col_radius,
+        camera.player_height,
+    );
+
     if can_move_z_flat {
         new_pos.z = target_z;
     } else if camera.grounded {
         // Try step up
-        let can_step_z = !check_collision(world, Vec3::new(new_pos.x, new_pos.y + step_height, target_z), col_radius, camera.player_height);
+        let can_step_z = !check_collision(
+            world,
+            Vec3::new(new_pos.x, new_pos.y + step_height, target_z),
+            col_radius,
+            camera.player_height,
+        );
         if can_step_z {
-             if let Some(h) = get_terrain_height(world, Vec3::new(new_pos.x, new_pos.y + step_height, target_z)) {
+            if let Some(h) = get_terrain_height(
+                world,
+                Vec3::new(new_pos.x, new_pos.y + step_height, target_z),
+            ) {
                 if h - (new_pos.y - camera.player_height) <= step_height + 0.1 {
                     new_pos.z = target_z;
                     // Only update Y if it's higher than current (in case we already stepped up in X)
@@ -350,17 +377,22 @@ fn walk_movement(
     // If not grounded or jumping, apply vertical velocity
     // (If we stepped up, new_pos.y is already updated)
     if !camera.grounded {
-         new_pos.y += movement.y;
+        new_pos.y += movement.y;
     }
 
     // Ceiling check
     if movement.y > 0.0 {
-         if check_collision(world, new_pos + Vec3::Y * 0.1, col_radius, camera.player_height) {
-             camera.velocity.y = 0.0;
-             new_pos.y = transform.translation.y; // Cancel updwards move
-         }
+        if check_collision(
+            world,
+            new_pos + Vec3::Y * 0.1,
+            col_radius,
+            camera.player_height,
+        ) {
+            camera.velocity.y = 0.0;
+            new_pos.y = transform.translation.y; // Cancel updwards move
+        }
     }
-    
+
     // Apply final position
     transform.translation = new_pos;
 
@@ -377,21 +409,31 @@ fn check_collision(world: &VoxelWorld, pos: Vec3, radius: f32, height: f32) -> b
     // Check feet, waist, head
     // A simple 3-point check or 4 corners check
     // For cylinder, we check boundaries: x+r, x-r, z+r, z-r
-    
+
     let y_min = pos.y - height;
     let y_max = pos.y;
-    
+
     // Discrete steps for Y (feet, mid, head)
     let y_steps = [y_min + 0.1, y_min + height * 0.5, y_max - 0.1];
-    
+
     for y in y_steps {
         // Check center
-        if is_solid_at(world, Vec3::new(pos.x, y, pos.z)) { return true; }
+        if is_solid_at(world, Vec3::new(pos.x, y, pos.z)) {
+            return true;
+        }
         // Check cardinal edges
-        if is_solid_at(world, Vec3::new(pos.x + radius, y, pos.z)) { return true; }
-        if is_solid_at(world, Vec3::new(pos.x - radius, y, pos.z)) { return true; }
-        if is_solid_at(world, Vec3::new(pos.x, y, pos.z + radius)) { return true; }
-        if is_solid_at(world, Vec3::new(pos.x, y, pos.z - radius)) { return true; }
+        if is_solid_at(world, Vec3::new(pos.x + radius, y, pos.z)) {
+            return true;
+        }
+        if is_solid_at(world, Vec3::new(pos.x - radius, y, pos.z)) {
+            return true;
+        }
+        if is_solid_at(world, Vec3::new(pos.x, y, pos.z + radius)) {
+            return true;
+        }
+        if is_solid_at(world, Vec3::new(pos.x, y, pos.z - radius)) {
+            return true;
+        }
     }
     false
 }
@@ -424,7 +466,7 @@ fn get_terrain_height(world: &VoxelWorld, pos: Vec3) -> Option<f32> {
     let fz = z - z0 as f32;
 
     // We scan for ground near the player's feet
-    let scan_start_y = pos.y; 
+    let scan_start_y = pos.y;
 
     let h00 = get_column_height(world, x0, z0, scan_start_y);
     let h10 = get_column_height(world, x1, z0, scan_start_y);
@@ -454,12 +496,12 @@ fn get_terrain_height(world: &VoxelWorld, pos: Vec3) -> Option<f32> {
 fn get_column_height(world: &VoxelWorld, x: i32, z: i32, start_y: f32) -> Option<f32> {
     let mut y = (start_y + 1.0).ceil() as i32;
     let min_y = y - 6; // Scan down 6 blocks max for ground
-    
+
     while y >= min_y {
         if let Some(voxel) = world.get_voxel(IVec3::new(x, y, z)) {
             if voxel.is_solid() {
                 // Return Y + 1.0 (top of block)
-                // For surface nets, visual surface is often a bit smoothed, but 
+                // For surface nets, visual surface is often a bit smoothed, but
                 // walking on the block top (1.0) is the safe standard.
                 return Some(y as f32 + 1.0);
             }
