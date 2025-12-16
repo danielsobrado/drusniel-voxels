@@ -39,6 +39,23 @@ pub struct TargetedBlock {
     pub voxel_type: Option<VoxelType>,
 }
 
+/// Resource that enables the edition mode for dragging blocks
+#[derive(Resource, Default)]
+pub struct EditMode {
+    pub enabled: bool,
+}
+
+/// State for an in-progress drag operation
+#[derive(Resource, Default)]
+pub struct DragState {
+    pub dragged_block: Option<DraggedBlock>,
+}
+
+pub struct DraggedBlock {
+    pub block_type: VoxelType,
+    pub original_position: IVec3,
+}
+
 /// Resource tracking the currently targeted entity
 #[derive(Resource, Default)]
 pub struct TargetedEntity {
@@ -175,9 +192,14 @@ pub fn update_targeted_entity(
 /// System to handle attacking entities (left click)
 pub fn attack_entity_system(
     mouse: Res<ButtonInput<MouseButton>>,
+    edit_mode: Res<EditMode>,
     targeted_entity: Res<TargetedEntity>,
     mut entity_query: Query<&mut Health>,
 ) {
+    if edit_mode.enabled {
+        return;
+    }
+
     if mouse.just_pressed(MouseButton::Left) {
         if let Some(entity) = targeted_entity.entity {
             if let Ok(mut health) = entity_query.get_mut(entity) {
@@ -191,11 +213,16 @@ pub fn attack_entity_system(
 /// System to handle block breaking (left click)
 pub fn break_block_system(
     mouse: Res<ButtonInput<MouseButton>>,
+    edit_mode: Res<EditMode>,
     targeted_block: Res<TargetedBlock>,
     targeted_entity: Res<TargetedEntity>,
     mut world: ResMut<VoxelWorld>,
     mut held: ResMut<HeldBlock>,
 ) {
+    if edit_mode.enabled {
+        return;
+    }
+
     // Only break blocks if not targeting an entity
     if mouse.just_pressed(MouseButton::Left) && targeted_entity.entity.is_none() {
         if let (Some(pos), Some(voxel_type)) = (targeted_block.position, targeted_block.voxel_type)
@@ -218,11 +245,16 @@ pub fn break_block_system(
 /// System to handle block placing (right click)
 pub fn place_block_system(
     mouse: Res<ButtonInput<MouseButton>>,
+    edit_mode: Res<EditMode>,
     targeted: Res<TargetedBlock>,
     mut world: ResMut<VoxelWorld>,
     held: Res<HeldBlock>,
     camera_query: Query<&Transform, With<crate::camera::controller::PlayerCamera>>,
 ) {
+    if edit_mode.enabled {
+        return;
+    }
+
     if mouse.just_pressed(MouseButton::Right) {
         if let (Some(block_pos), Some(normal)) = (targeted.position, targeted.normal) {
             // Place block on the face we're looking at
@@ -286,6 +318,114 @@ fn mark_neighbors_dirty(world: &mut VoxelWorld, pos: IVec3) {
             }
         }
     }
+}
+
+/// Toggle edit mode with Shift+M and restore any dragged block when disabling it
+pub fn toggle_edit_mode(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut edit_mode: ResMut<EditMode>,
+    mut drag_state: ResMut<DragState>,
+    mut world: ResMut<VoxelWorld>,
+) {
+    let shift_pressed =
+        keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+
+    if keyboard.just_pressed(KeyCode::KeyM) && shift_pressed {
+        edit_mode.enabled = !edit_mode.enabled;
+
+        if edit_mode.enabled {
+            info!("Edit mode enabled - click and drag a block to move it");
+        } else {
+            if let Some(dragged) = drag_state.dragged_block.take() {
+                world.set_voxel(dragged.original_position, dragged.block_type);
+                mark_neighbors_dirty(&mut world, dragged.original_position);
+            }
+            info!("Edit mode disabled");
+        }
+    }
+}
+
+/// Begin dragging the currently targeted block when in edit mode
+pub fn start_dragging_block(
+    edit_mode: Res<EditMode>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    targeted_block: Res<TargetedBlock>,
+    mut drag_state: ResMut<DragState>,
+    mut world: ResMut<VoxelWorld>,
+) {
+    if !edit_mode.enabled || !mouse.just_pressed(MouseButton::Left) {
+        return;
+    }
+
+    if drag_state.dragged_block.is_some() {
+        return;
+    }
+
+    if let (Some(pos), Some(voxel_type)) = (targeted_block.position, targeted_block.voxel_type) {
+        if voxel_type == VoxelType::Bedrock {
+            return;
+        }
+
+        world.set_voxel(pos, VoxelType::Air);
+        mark_neighbors_dirty(&mut world, pos);
+        drag_state.dragged_block = Some(DraggedBlock {
+            block_type: voxel_type,
+            original_position: pos,
+        });
+    }
+}
+
+/// Finish dragging by placing the block at the targeted location, or restore it if invalid
+pub fn finish_dragging_block(
+    edit_mode: Res<EditMode>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    targeted_block: Res<TargetedBlock>,
+    mut drag_state: ResMut<DragState>,
+    camera_query: Query<&Transform, With<crate::camera::controller::PlayerCamera>>,
+    mut world: ResMut<VoxelWorld>,
+) {
+    if !edit_mode.enabled || !mouse.just_released(MouseButton::Left) {
+        return;
+    }
+
+    let Some(dragged) = drag_state.dragged_block.take() else {
+        return;
+    };
+
+    if let (Some(block_pos), Some(normal)) = (targeted_block.position, targeted_block.normal) {
+        let place_pos = block_pos + normal;
+
+        if let Ok(camera_transform) = camera_query.single() {
+            let player_block = IVec3::new(
+                camera_transform.translation.x.floor() as i32,
+                camera_transform.translation.y.floor() as i32,
+                camera_transform.translation.z.floor() as i32,
+            );
+            let player_feet = IVec3::new(
+                camera_transform.translation.x.floor() as i32,
+                (camera_transform.translation.y - 1.8).floor() as i32,
+                camera_transform.translation.z.floor() as i32,
+            );
+
+            if place_pos == player_block || place_pos == player_feet {
+                world.set_voxel(dragged.original_position, dragged.block_type);
+                mark_neighbors_dirty(&mut world, dragged.original_position);
+                return;
+            }
+        }
+
+        if let Some(existing) = world.get_voxel(place_pos) {
+            if existing == VoxelType::Air || existing == VoxelType::Water {
+                world.set_voxel(place_pos, dragged.block_type);
+                mark_neighbors_dirty(&mut world, place_pos);
+                return;
+            }
+        }
+    }
+
+    // Restore to the original position if we couldn't place it elsewhere
+    world.set_voxel(dragged.original_position, dragged.block_type);
+    mark_neighbors_dirty(&mut world, dragged.original_position);
 }
 
 /// System to render block highlight wireframe
@@ -639,6 +779,8 @@ pub fn update_debug_overlay(
     state: Res<DebugOverlayState>,
     targeted: Res<TargetedBlock>,
     world: Res<VoxelWorld>,
+    edit_mode: Res<EditMode>,
+    drag_state: Res<DragState>,
     camera_query: Query<&Transform, With<crate::camera::controller::PlayerCamera>>,
     diagnostics: Res<DiagnosticsStore>,
     toggles: Res<DebugDetailToggles>,
@@ -762,6 +904,20 @@ pub fn update_debug_overlay(
     text_content.push_str("\n[F3] Toggle overlay");
     text_content.push_str("\n[G] Detailed log");
     text_content.push_str(&format!(
+        "\n[Shift+M] Edit mode: {}",
+        if edit_mode.enabled { "ON" } else { "OFF" }
+    ));
+    if edit_mode.enabled {
+        text_content.push_str(&format!(
+            "\n    Dragging: {}",
+            if drag_state.dragged_block.is_some() {
+                "YES"
+            } else {
+                "NO"
+            }
+        ));
+    }
+    text_content.push_str(&format!(
         "\n[V] Vertex corners: {}",
         if toggles.show_vertex_corners {
             "ON"
@@ -791,6 +947,8 @@ impl Plugin for InteractionPlugin {
         app.init_resource::<TargetedBlock>()
             .init_resource::<TargetedEntity>()
             .init_resource::<HeldBlock>()
+            .init_resource::<EditMode>()
+            .init_resource::<DragState>()
             .init_resource::<DebugOverlayState>()
             .init_resource::<DebugDetailToggles>()
             .add_systems(Startup, setup_debug_overlay)
@@ -799,6 +957,9 @@ impl Plugin for InteractionPlugin {
                 (
                     update_targeted_block,
                     update_targeted_entity,
+                    toggle_edit_mode,
+                    start_dragging_block,
+                    finish_dragging_block,
                     attack_entity_system,
                     break_block_system,
                     place_block_system,
