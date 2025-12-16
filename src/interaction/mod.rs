@@ -1,4 +1,5 @@
 use crate::entity::{Health, Wolf};
+use crate::menu::PauseMenuState;
 use crate::voxel::types::{Voxel, VoxelType};
 use crate::voxel::world::VoxelWorld;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
@@ -969,7 +970,8 @@ impl Plugin for InteractionPlugin {
                     toggle_debug_details,
                     update_debug_overlay,
                 )
-                    .chain(),
+                    .chain()
+                    .run_if(|state: Res<PauseMenuState>| !state.open),
             );
     }
 }
