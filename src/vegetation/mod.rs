@@ -1,18 +1,18 @@
 pub mod grass_material;
 
-use bevy::asset::RenderAssetUsages;
-use bevy::prelude::*;
-use bevy::light::NotShadowCaster;
-use bevy_mesh::{Indices, PrimitiveTopology, VertexAttributeValues};
-use crate::constants::CHUNK_SIZE;
-use crate::voxel::world::VoxelWorld;
-use crate::voxel::types::{VoxelType, Voxel};
-use crate::voxel::meshing::ChunkMesh;
-use crate::rendering::materials::WaterMaterial;
 use crate::camera::controller::PlayerCamera;
+use crate::constants::CHUNK_SIZE;
+use crate::rendering::materials::WaterMaterial;
+use crate::voxel::meshing::ChunkMesh;
 use crate::voxel::plugin::WATER_LEVEL;
+use crate::voxel::types::{Voxel, VoxelType};
+use crate::voxel::world::VoxelWorld;
+use bevy::asset::RenderAssetUsages;
+use bevy::light::NotShadowCaster;
+use bevy::prelude::*;
+use bevy_mesh::{Indices, PrimitiveTopology, VertexAttributeValues};
 
-pub use grass_material::{GrassMaterial, GrassMaterialPlugin, GrassMaterialHandles};
+pub use grass_material::{GrassMaterial, GrassMaterialHandles, GrassMaterialPlugin};
 
 /// Minimal info for a single grass blade instance
 struct GrassInstance {
@@ -70,17 +70,23 @@ pub fn setup_grass_patch_assets(
         GrassMaterial::new(
             LinearRgba::new(0.16, 0.28, 0.05, 1.0), // Deep green base
             LinearRgba::new(0.60, 0.85, 0.35, 1.0), // Bright green tip
-            0.35, 1.8, 0.08,
+            0.35,
+            1.8,
+            0.08,
         ),
         GrassMaterial::new(
             LinearRgba::new(0.18, 0.32, 0.07, 1.0),
             LinearRgba::new(0.70, 0.90, 0.38, 1.0),
-            0.30, 1.5, 0.10,
+            0.30,
+            1.5,
+            0.10,
         ),
         GrassMaterial::new(
             LinearRgba::new(0.12, 0.26, 0.06, 1.0),
             LinearRgba::new(0.55, 0.78, 0.32, 1.0),
-            0.40, 2.0, 0.07,
+            0.40,
+            2.0,
+            0.07,
         ),
     ];
 
@@ -90,7 +96,10 @@ pub fn setup_grass_patch_assets(
         .collect();
 
     material_handles.handles = material_handles_vec.clone();
-    info!("Created {} grass material variations", material_handles_vec.len());
+    info!(
+        "Created {} grass material variations",
+        material_handles_vec.len()
+    );
 
     commands.insert_resource(GrassPatchAssets {
         blade_mesh: blade,
@@ -106,21 +115,27 @@ pub fn attach_procedural_grass_to_chunks(
     water_material: Res<WaterMaterial>,
     mut meshes: ResMut<Assets<Mesh>>,
     // Query chunks with StandardMaterial (blocky mode)
-    blocky_chunk_query: Query<(
-        Entity,
-        &ChunkMesh,
-        &Mesh3d,
-        &MeshMaterial3d<StandardMaterial>,
-        &Transform,
-    ), Without<ChunkGrassAttached>>,
+    blocky_chunk_query: Query<
+        (
+            Entity,
+            &ChunkMesh,
+            &Mesh3d,
+            &MeshMaterial3d<StandardMaterial>,
+            &Transform,
+        ),
+        Without<ChunkGrassAttached>,
+    >,
     // Query chunks with TriplanarMaterial (surface nets mode)
-    triplanar_chunk_query: Query<(
-        Entity,
-        &ChunkMesh,
-        &Mesh3d,
-        &MeshMaterial3d<crate::rendering::triplanar_material::TriplanarMaterial>,
-        &Transform,
-    ), Without<ChunkGrassAttached>>,
+    triplanar_chunk_query: Query<
+        (
+            Entity,
+            &ChunkMesh,
+            &Mesh3d,
+            &MeshMaterial3d<crate::rendering::triplanar_material::TriplanarMaterial>,
+            &Transform,
+        ),
+        Without<ChunkGrassAttached>,
+    >,
 ) {
     // Process blocky chunks
     for (entity, chunk, chunk_mesh, material, transform) in blocky_chunk_query.iter() {
@@ -129,12 +144,28 @@ pub fn attach_procedural_grass_to_chunks(
             continue;
         }
 
-        process_chunk_for_grass(&mut commands, &assets, &mut meshes, entity, chunk, chunk_mesh, transform);
+        process_chunk_for_grass(
+            &mut commands,
+            &assets,
+            &mut meshes,
+            entity,
+            chunk,
+            chunk_mesh,
+            transform,
+        );
     }
 
     // Process triplanar chunks (surface nets mode)
     for (entity, chunk, chunk_mesh, _material, transform) in triplanar_chunk_query.iter() {
-        process_chunk_for_grass(&mut commands, &assets, &mut meshes, entity, chunk, chunk_mesh, transform);
+        process_chunk_for_grass(
+            &mut commands,
+            &assets,
+            &mut meshes,
+            entity,
+            chunk,
+            chunk_mesh,
+            transform,
+        );
     }
 }
 
@@ -252,12 +283,12 @@ fn collect_grass_instances(
         }
 
         let normal_dir = normal_world.normalize();
-        
+
         if normal_dir.y <= 0.25 {
             rejected_normal += 1;
             continue;
         }
-        
+
         accepted += 1;
 
         let blade_count = (density as f32 * area).ceil() as u32;
@@ -281,16 +312,20 @@ fn collect_grass_instances(
         for i in 0..blade_count {
             // Two independent hashes for barycentric sampling (u1/u2)
             let h1 = mix_bits32(seed_base_bits ^ (i as u32).wrapping_mul(0x85eb_ca6b));
-            let h2 = mix_bits32(seed_base_bits ^ (i as u32).wrapping_mul(0xc2b2_ae35) ^ 0x27d4_eb2d);
+            let h2 =
+                mix_bits32(seed_base_bits ^ (i as u32).wrapping_mul(0xc2b2_ae35) ^ 0x27d4_eb2d);
             let u1 = (h1 as f32) / (u32::MAX as f32);
             let u2 = (h2 as f32) / (u32::MAX as f32);
             let r1 = u1.sqrt(); // area-corrected radial factor
-            let r2 = u2;        // angle factor
+            let r2 = u2; // angle factor
 
             let bary = Vec3::new(1.0 - r1, r1 * (1.0 - r2), r1 * r2);
             let position = v0 * bary.x + v1 * bary.y + v2 * bary.z;
 
-            instances.push(GrassInstance { position, normal: normal_dir });
+            instances.push(GrassInstance {
+                position,
+                normal: normal_dir,
+            });
             if instances.len() >= max_count {
                 return instances;
             }
@@ -326,8 +361,10 @@ fn build_grass_patch_mesh(template: &Mesh, instances: &[GrassInstance]) -> Optio
 
     let base_len = positions.len() as u32;
     let mut out_positions = Vec::with_capacity(positions.len() * instances.len());
-    let mut out_normals = Vec::with_capacity(normals.as_ref().map(|n| n.len()).unwrap_or(0) * instances.len());
-    let mut out_uvs: Vec<[f32; 2]> = Vec::with_capacity(uvs.as_ref().map(|u| u.len()).unwrap_or(0) * instances.len());
+    let mut out_normals =
+        Vec::with_capacity(normals.as_ref().map(|n| n.len()).unwrap_or(0) * instances.len());
+    let mut out_uvs: Vec<[f32; 2]> =
+        Vec::with_capacity(uvs.as_ref().map(|u| u.len()).unwrap_or(0) * instances.len());
     let mut out_indices = Vec::with_capacity(indices.len() * instances.len());
 
     for (i, instance) in instances.iter().enumerate() {
@@ -342,7 +379,8 @@ fn build_grass_patch_mesh(template: &Mesh, instances: &[GrassInstance]) -> Optio
         let rotation = align * Quat::from_rotation_y(yaw);
         // Lift slightly along the normal to avoid z-fighting with the ground
         let base_pos = instance.position + instance.normal * 0.05;
-        let transform = Mat4::from_scale_rotation_translation(Vec3::splat(scale), rotation, base_pos);
+        let transform =
+            Mat4::from_scale_rotation_translation(Vec3::splat(scale), rotation, base_pos);
         let normal_matrix = Mat3::from_quat(rotation);
 
         let index_offset = (i as u32) * base_len;
@@ -368,7 +406,10 @@ fn build_grass_patch_mesh(template: &Mesh, instances: &[GrassInstance]) -> Optio
         }
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, out_positions);
 
     if !out_normals.is_empty() {
@@ -422,25 +463,33 @@ pub fn spawn_grass_blades(
         GrassMaterial::new(
             LinearRgba::new(0.25, 0.20, 0.08, 1.0),
             LinearRgba::new(0.95, 0.85, 0.45, 1.0),
-            0.35, 1.8, 0.08,
+            0.35,
+            1.8,
+            0.08,
         ),
         // Warm tan grass
         GrassMaterial::new(
             LinearRgba::new(0.30, 0.22, 0.10, 1.0),
             LinearRgba::new(0.85, 0.75, 0.50, 1.0),
-            0.30, 1.5, 0.10,
+            0.30,
+            1.5,
+            0.10,
         ),
         // Light green-gold mix
         GrassMaterial::new(
             LinearRgba::new(0.15, 0.20, 0.08, 1.0),
             LinearRgba::new(0.70, 0.80, 0.40, 1.0),
-            0.40, 2.0, 0.07,
+            0.40,
+            2.0,
+            0.07,
         ),
         // Pale straw color
         GrassMaterial::new(
             LinearRgba::new(0.35, 0.30, 0.15, 1.0),
             LinearRgba::new(0.95, 0.90, 0.60, 1.0),
-            0.32, 1.6, 0.09,
+            0.32,
+            1.6,
+            0.09,
         ),
     ];
 
@@ -475,8 +524,9 @@ pub fn spawn_grass_blades(
 
                                 // Check if this is a grass block with air above
                                 if voxel == VoxelType::TopSoil {
-                                    let world_pos = chunk_origin + IVec3::new(x as i32, y as i32, z as i32);
-                                    
+                                    let world_pos =
+                                        chunk_origin + IVec3::new(x as i32, y as i32, z as i32);
+
                                     // Ensure we don't spawn grass underwater or right at the water edge
                                     // +1.0 buffer ensures no grass spawns on blocks that are partially submerged or just touching water surface
                                     if world_pos.y <= WATER_LEVEL + 1 {
@@ -495,23 +545,47 @@ pub fn spawn_grass_blades(
                                                 let blade_count = 3 + (hash * 4.0) as i32;
 
                                                 for i in 0..blade_count {
-                                                    let offset_x = (simple_hash(world_pos.x + i * 17, world_pos.z) - 0.5) * 0.9;
-                                                    let offset_z = (simple_hash(world_pos.x, world_pos.z + i * 23) - 0.5) * 0.9;
-                                                    let rotation = simple_hash(world_pos.x * 7 + i, world_pos.z * 11) * std::f32::consts::TAU;
-                                                    let scale = 0.6 + simple_hash(world_pos.x + i, world_pos.z + i * 5) * 0.8;
+                                                    let offset_x = (simple_hash(
+                                                        world_pos.x + i * 17,
+                                                        world_pos.z,
+                                                    ) - 0.5)
+                                                        * 0.9;
+                                                    let offset_z = (simple_hash(
+                                                        world_pos.x,
+                                                        world_pos.z + i * 23,
+                                                    ) - 0.5)
+                                                        * 0.9;
+                                                    let rotation = simple_hash(
+                                                        world_pos.x * 7 + i,
+                                                        world_pos.z * 11,
+                                                    ) * std::f32::consts::TAU;
+                                                    let scale = 0.6
+                                                        + simple_hash(
+                                                            world_pos.x + i,
+                                                            world_pos.z + i * 5,
+                                                        ) * 0.8;
 
                                                     // Pick material based on hash for color variation
-                                                    let material_idx = ((simple_hash(world_pos.x + i * 3, world_pos.z + i * 7) * 4.0) as usize) % grass_handles.len();
+                                                    let material_idx = ((simple_hash(
+                                                        world_pos.x + i * 3,
+                                                        world_pos.z + i * 7,
+                                                    ) * 4.0)
+                                                        as usize)
+                                                        % grass_handles.len();
 
                                                     commands.spawn((
                                                         Mesh3d(grass_mesh.clone()),
-                                                        MeshMaterial3d(grass_handles[material_idx].clone()),
+                                                        MeshMaterial3d(
+                                                            grass_handles[material_idx].clone(),
+                                                        ),
                                                         Transform::from_xyz(
                                                             world_pos.x as f32 + 0.5 + offset_x,
                                                             world_pos.y as f32 + 1.0,
                                                             world_pos.z as f32 + 0.5 + offset_z,
                                                         )
-                                                        .with_rotation(Quat::from_rotation_y(rotation))
+                                                        .with_rotation(Quat::from_rotation_y(
+                                                            rotation,
+                                                        ))
                                                         .with_scale(Vec3::splat(scale)),
                                                         GrassBlade,
                                                     ));
@@ -553,20 +627,38 @@ fn create_grass_blade_mesh() -> Mesh {
     ];
 
     let normals = vec![
-        [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0],
-        [1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
     ];
 
     // UVs: y=1 at bottom (no movement), y=0 at top (max movement)
     let uvs = vec![
-        [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0],
-        [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0],
+        [0.0, 1.0],
+        [1.0, 1.0],
+        [1.0, 0.0],
+        [0.0, 0.0],
+        [0.0, 1.0],
+        [1.0, 1.0],
+        [1.0, 0.0],
+        [0.0, 0.0],
     ];
 
     // Vertex colors for additional variation (shader will blend base_color to tip_color)
     let colors: Vec<[f32; 4]> = vec![
-        [0.35, 0.30, 0.15, 1.0], [0.35, 0.30, 0.15, 1.0], [0.95, 0.85, 0.45, 1.0], [0.95, 0.85, 0.45, 1.0],
-        [0.35, 0.30, 0.15, 1.0], [0.35, 0.30, 0.15, 1.0], [0.95, 0.85, 0.45, 1.0], [0.95, 0.85, 0.45, 1.0],
+        [0.35, 0.30, 0.15, 1.0],
+        [0.35, 0.30, 0.15, 1.0],
+        [0.95, 0.85, 0.45, 1.0],
+        [0.95, 0.85, 0.45, 1.0],
+        [0.35, 0.30, 0.15, 1.0],
+        [0.35, 0.30, 0.15, 1.0],
+        [0.95, 0.85, 0.45, 1.0],
+        [0.95, 0.85, 0.45, 1.0],
     ];
 
     let indices = vec![
@@ -576,7 +668,10 @@ fn create_grass_blade_mesh() -> Mesh {
         4, 6, 5, 4, 7, 6, // Quad 2 back
     ];
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
@@ -633,7 +728,8 @@ pub fn spawn_rock_props(
 
             // Use hash to determine if rock spawns here
             let hash = simple_hash(world_x * 31, world_z * 37);
-            if hash > 0.995 { // Very sparse rocks
+            if hash > 0.995 {
+                // Very sparse rocks
                 // Find surface height
                 for y in (0..64).rev() {
                     let pos = IVec3::new(world_x, y, world_z);
@@ -653,7 +749,11 @@ pub fn spawn_rock_props(
                                     world_z as f32 + 0.5,
                                 )
                                 .with_rotation(Quat::from_rotation_y(rotation))
-                                .with_scale(Vec3::new(scale, scale * 0.6, scale)),
+                                .with_scale(Vec3::new(
+                                    scale,
+                                    scale * 0.6,
+                                    scale,
+                                )),
                                 RockProp,
                             ));
                             rock_count += 1;
@@ -676,7 +776,9 @@ fn create_rock_mesh(size: f32, _seed: i32) -> Mesh {
 
 /// Simple hash function for deterministic randomness
 fn simple_hash(x: i32, z: i32) -> f32 {
-    let n = x.wrapping_mul(374761393).wrapping_add(z.wrapping_mul(668265263));
+    let n = x
+        .wrapping_mul(374761393)
+        .wrapping_add(z.wrapping_mul(668265263));
     let n = (n ^ (n >> 13)).wrapping_mul(1274126177);
     let n = n ^ (n >> 16);
     (n as u32 as f32) / (u32::MAX as f32)
@@ -742,7 +844,7 @@ pub fn spawn_floating_particles(
 
         // Spawn in a sphere around camera start position - Not too close
         // Radius 5.0 to 14.0
-        let radius = 5.0 + hash1 * 9.0; 
+        let radius = 5.0 + hash1 * 9.0;
         let angle = hash2 * std::f32::consts::TAU;
         let height = (hash3 - 0.5) * 6.0; // -3 to +3 relative to camera
 
@@ -796,42 +898,43 @@ pub fn animate_particles(
     for (mut transform, particle) in particles.iter_mut() {
         // Gentle bobbing motion
         let bob = (t * particle.speed + particle.phase).sin() * 0.2; // Reduced bob amplitude
-        
+
         // We calculate position relative to camera to keep them around
         // Check distance
         let dist_sq = transform.translation.distance_squared(camera_pos);
-        
-        // If too far (radius > 15), wrap to other side
-        if dist_sq > 225.0 { // 15^2
-             // Respawn logic: Teleport to OPPOSITE side of wrap boundary
-             // Simply move towards camera by 2x radius? No, that passes through.
-             // Just project random position within 10-15 radius in front of camera?
-             
-             // Simplest wrapping: If > 15m away, move to random position 10m away in current view direction?
-             // Or standard toroidal wrap relative to camera movement?
-             
-             // Let's just teleport them to a specific distance in front of the camera slightly randomized
-             let forward = camera_transform.forward();
-             let right = camera_transform.right();
-             let up = camera_transform.up();
-             
-             // Random offsets based on particle address (hacky but deterministic-ish)
-             let r1 = (transform.translation.x * 7.0).sin();
-             let r2 = (transform.translation.z * 13.0).cos();
-             
-             let new_pos = camera_pos 
-                + forward * (8.0 + r1 * 4.0) // 4 to 12m in front
-                + right * (r2 * 6.0)         // +/- 6m sideways
-                + up * (r1 * 4.0);           // +/- 4m vertical
-                
-             transform.translation = new_pos;
-        } else {
-             // Normal movement
-             transform.translation.y = particle.base_y + bob + (camera_pos.y - transform.translation.y) * 0.01; // Slowly follow camera Y
-             transform.translation.x += particle.drift.x * time.delta_secs() * 0.3;
-             transform.translation.z += particle.drift.z * time.delta_secs() * 0.3;
-        }
 
+        // If too far (radius > 15), wrap to other side
+        if dist_sq > 225.0 {
+            // 15^2
+            // Respawn logic: Teleport to OPPOSITE side of wrap boundary
+            // Simply move towards camera by 2x radius? No, that passes through.
+            // Just project random position within 10-15 radius in front of camera?
+
+            // Simplest wrapping: If > 15m away, move to random position 10m away in current view direction?
+            // Or standard toroidal wrap relative to camera movement?
+
+            // Let's just teleport them to a specific distance in front of the camera slightly randomized
+            let forward = camera_transform.forward();
+            let right = camera_transform.right();
+            let up = camera_transform.up();
+
+            // Random offsets based on particle address (hacky but deterministic-ish)
+            let r1 = (transform.translation.x * 7.0).sin();
+            let r2 = (transform.translation.z * 13.0).cos();
+
+            let new_pos = camera_pos
+                + forward * (8.0 + r1 * 4.0) // 4 to 12m in front
+                + right * (r2 * 6.0) // +/- 6m sideways
+                + up * (r1 * 4.0); // +/- 4m vertical
+
+            transform.translation = new_pos;
+        } else {
+            // Normal movement
+            transform.translation.y =
+                particle.base_y + bob + (camera_pos.y - transform.translation.y) * 0.01; // Slowly follow camera Y
+            transform.translation.x += particle.drift.x * time.delta_secs() * 0.3;
+            transform.translation.z += particle.drift.z * time.delta_secs() * 0.3;
+        }
     }
 }
 
@@ -856,18 +959,21 @@ pub fn spawn_trees(
     let Some(player_transform) = player_query.iter().next() else {
         return;
     };
-    
+
     // Calculate player chunk to ensure we are searching where the world is actually loaded
     let player_pos = player_transform.translation;
     let player_chunk = VoxelWorld::world_to_chunk(player_pos.as_ivec3());
-    
+
     // Check if player's chunk is loaded
     if world.get_chunk(player_chunk).is_none() {
         return;
     }
 
     spawned.0 = true;
-    info!("Starting tree generation. Target: 15. Player at {}", player_pos);
+    info!(
+        "Starting tree generation. Target: 15. Player at {}",
+        player_pos
+    );
 
     // DEBUG PROBE
     let test_pos = IVec3::new(24, 20, 24);
