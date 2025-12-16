@@ -4,6 +4,7 @@ use voxel_builder::camera::plugin::CameraPlugin;
 use voxel_builder::entity::EntityPlugin;
 use voxel_builder::environment::AtmospherePlugin;
 use voxel_builder::interaction::InteractionPlugin;
+use voxel_builder::menu::PauseMenuPlugin;
 use voxel_builder::props::PropsPlugin;
 use voxel_builder::rendering::plugin::RenderingPlugin;
 use voxel_builder::vegetation::VegetationPlugin;
@@ -20,6 +21,7 @@ fn main() {
         .add_plugins(InteractionPlugin)
         .add_plugins(PickaxePlugin)
         .add_plugins(VegetationPlugin)
+        .add_plugins(PauseMenuPlugin)
         .add_plugins(PropsPlugin)
         .add_plugins(AtmospherePlugin)
         .add_plugins(EntityPlugin)
