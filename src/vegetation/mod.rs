@@ -878,107 +878,114 @@ pub fn spawn_trees(
     }
 
     // Load the tree model
-    let tree_scene: Handle<Scene> = asset_server.load("models/SM_Southern_Oak/SM_Southern_Oak_NN_01b.gltf#Scene0");
+    let tree_scene: Handle<Scene> =
+        asset_server.load("models/SM_Southern_Oak/SM_Southern_Oak_NN_01b.gltf#Scene0");
 
     let mut tree_count = 0;
     let target_trees = 15;
-    
-    // Collect all potential chunk positions
-    let mut chunks_to_scan = Vec::new();
-    for x in 0..32 {
-        for z in 0..32 {
-            for y in 0..4 {
-                chunks_to_scan.push(IVec3::new(x, y, z));
-            }
-        }
-    }
 
-    // Sort by distance to player's chunk to prioritize nearby spawning
-    let player_chunk = VoxelWorld::world_to_chunk(player_pos.as_ivec3());
-    chunks_to_scan.sort_by_key(|pos| {
-        let dist_sq = (*pos - player_chunk).as_vec3().length_squared() as i32;
-        dist_sq
-    });
+    // Random placement settings
+    let min_tree_distance = 12.0; // Keep trees from clumping together
+    let min_radius = 24.0; // Start spawning a bit away from the player
+    let max_radius = 96.0; // Roughly 6 chunks away
 
-    let mut chunks_checked = 0;
-    let mut solid_found = 0;
+    // Seed the pseudo-random placement using player position and time to avoid repetition
+    let seed_base =
+        player_pos.x as i32 ^ player_pos.z as i32 ^ (time.elapsed_secs() * 1000.0) as i32;
 
-    // Iterate sorted chunks
-    for chunk_pos in chunks_to_scan {
-        if tree_count >= target_trees {
-            break;
-        }
+    let mut attempts = 0;
+    let max_attempts = 600; // Plenty of samples to find good, spaced spots
+    let mut placed_positions: Vec<Vec3> = Vec::new();
 
-        if let Some(chunk) = world.get_chunk(chunk_pos) {
-            chunks_checked += 1;
+    while tree_count < target_trees && attempts < max_attempts {
+        // Generate a pseudo-random polar offset from the player
+        let rand_radius = simple_hash(seed_base + attempts * 17, seed_base + attempts * 31);
+        let rand_angle = simple_hash(seed_base + attempts * 13, seed_base + attempts * 47);
+
+        let radius = min_radius + rand_radius * (max_radius - min_radius);
+        let angle = rand_angle * std::f32::consts::TAU;
+
+        let world_x = (player_pos.x + angle.cos() * radius).round() as i32;
+        let world_z = (player_pos.z + angle.sin() * radius).round() as i32;
+
+        let column_pos = IVec3::new(world_x, player_pos.y as i32, world_z);
+        let chunk_pos = VoxelWorld::world_to_chunk(column_pos);
+
+        if world.get_chunk(chunk_pos).is_some() {
             let chunk_world_origin = VoxelWorld::chunk_to_world(chunk_pos);
-            let mut trees_in_chunk = 0;
-            let max_trees_per_chunk = 3; // Prevent clumping in a single chunk
 
-            // Scan columns in this chunk
-            // We use a randomized stride to avoid grid artifacts
-            for x in 0..16 {
-                for z in 0..16 {
-                        if tree_count >= target_trees || trees_in_chunk >= max_trees_per_chunk { break; }
-                        
-                        let world_x = chunk_world_origin.x + x as i32;
-                        let world_z = chunk_world_origin.z + z as i32;
-                        
-                        let hash = simple_hash(world_x * 73, world_z * 89);
-                        
-                        // force scan every column for debug
-                        if true { 
-                            // Scan world column for surface (top-down within this chunk's vertical bounds)
-                            // Note: We scan the local Y range 0..15 adjusted to world coords
-                            for y in (0..16).rev() {
-                                let world_y = chunk_world_origin.y + y as i32;
-                                let world_pos = IVec3::new(world_x, world_y, world_z);
-                                
-                                if let Some(voxel) = world.get_voxel(world_pos) {
-                                    if voxel.is_solid() && voxel != VoxelType::Water {
-                                        solid_found += 1;
-                                        
-                                        // Check air above
-                                        let above = world_pos + IVec3::Y;
-                                        let above_voxel = world.get_voxel(above).unwrap_or(VoxelType::Air);
-                                        let above2 = world_pos + IVec3::new(0, 2, 0);
-                                        let above2_voxel = world.get_voxel(above2).unwrap_or(VoxelType::Air);
+            // Scan the column from top to bottom within the chunk bounds
+            for y in (0..16).rev() {
+                let world_y = chunk_world_origin.y + y as i32;
+                let world_pos = IVec3::new(world_x, world_y, world_z);
 
-                                        if !above_voxel.is_solid() && !above2_voxel.is_solid() {
-                                            let scale = 0.8 + hash * 0.4;
-                                            let rotation = hash * std::f32::consts::TAU;
+                if let Some(voxel) = world.get_voxel(world_pos) {
+                    if voxel.is_solid() && voxel != VoxelType::Water {
+                        // Ensure there is air for the trunk and a bit of canopy
+                        let above = world_pos + IVec3::Y;
+                        let above_voxel = world.get_voxel(above).unwrap_or(VoxelType::Air);
+                        let above2 = world_pos + IVec3::new(0, 2, 0);
+                        let above2_voxel = world.get_voxel(above2).unwrap_or(VoxelType::Air);
 
-                                            commands.spawn((
-                                                SceneRoot(tree_scene.clone()),
-                                                Transform::from_xyz(
-                                                    world_x as f32 + 0.5,
-                                                    world_y as f32 + 1.0,
-                                                    world_z as f32 + 0.5,
-                                                )
-                                                .with_rotation(Quat::from_rotation_y(rotation))
-                                                .with_scale(Vec3::splat(scale)),
-                                            ));
-                                            tree_count += 1;
-                                            trees_in_chunk += 1;
-                                            info!("Spawned tree {} at {}", tree_count, world_pos);
-                                            break; // One tree per column
-                                        }
-                                    }
-                                }
+                        if !above_voxel.is_solid() && !above2_voxel.is_solid() {
+                            let spawn_pos = Vec3::new(
+                                world_x as f32 + 0.5,
+                                world_y as f32 + 1.0,
+                                world_z as f32 + 0.5,
+                            );
+
+                            // Keep trees separated
+                            if placed_positions.iter().all(|p| {
+                                p.distance_squared(spawn_pos)
+                                    >= min_tree_distance * min_tree_distance
+                            }) {
+                                let scale_rand =
+                                    simple_hash(seed_base + attempts * 3, seed_base + attempts * 5);
+                                let rotation_rand = simple_hash(
+                                    seed_base + attempts * 11,
+                                    seed_base + attempts * 19,
+                                );
+                                let scale = 0.8 + scale_rand * 0.4;
+                                let rotation = rotation_rand * std::f32::consts::TAU;
+
+                                commands.spawn((
+                                    SceneRoot(tree_scene.clone()),
+                                    Transform::from_xyz(
+                                        world_x as f32 + 0.5,
+                                        world_y as f32 + 1.0,
+                                        world_z as f32 + 0.5,
+                                    )
+                                    .with_rotation(Quat::from_rotation_y(rotation))
+                                    .with_scale(Vec3::splat(scale)),
+                                ));
+
+                                placed_positions.push(spawn_pos);
+                                tree_count += 1;
+                                info!("Spawned tree {} at {}", tree_count, world_pos);
                             }
+
+                            break; // Found ground in this column
                         }
+                    }
                 }
             }
         }
+
+        attempts += 1;
     }
 
     if tree_count < target_trees {
-        warn!("Finished scanning. Spawned {}/{} trees. Checked {} chunks. Found {} solid surfaces.", tree_count, target_trees, chunks_checked, solid_found);
+        warn!(
+            "Finished tree placement with spacing. Spawned {}/{} trees after {} attempts.",
+            tree_count, target_trees, attempts
+        );
     } else {
-        info!("Successfully spawned all {} trees. Checked {} chunks.", tree_count, chunks_checked);
+        info!(
+            "Successfully spawned all {} trees with minimum spacing after {} attempts.",
+            tree_count, attempts
+        );
     }
 }
-
 
 /// Plugin for vegetation and props
 pub struct VegetationPlugin;
