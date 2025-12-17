@@ -4,6 +4,7 @@ use crate::voxel::{meshing::ChunkMesh, persistence, world::VoxelWorld};
 use bevy::{input::keyboard::ReceivedCharacter, prelude::*};
 use std::net::ToSocketAddrs;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -26,7 +27,7 @@ pub struct MultiplayerFormState {
 
 #[derive(Resource, Default)]
 struct ConnectTaskState {
-    receiver: Option<Receiver<ConnectOutcome>>,
+    receiver: Option<Arc<Mutex<Receiver<ConnectOutcome>>>>,
 }
 
 enum ConnectOutcome {
@@ -514,7 +515,7 @@ fn handle_menu_buttons(
                 let join_port = form_state.join_port.clone();
                 let (tx, rx) = mpsc::channel();
 
-                connect_tasks.receiver = Some(rx);
+                connect_tasks.receiver = Some(Arc::new(Mutex::new(rx)));
                 chat.push_system(format!("Connecting to {}...", address));
 
                 thread::spawn(move || {
@@ -605,11 +606,19 @@ fn poll_connect_task_results(
     mut network: ResMut<NetworkSession>,
     mut chat: ResMut<ChatState>,
 ) {
-    let Some(receiver) = connect_tasks.receiver.take() else {
+    let Some(receiver) = connect_tasks.receiver.as_ref() else {
         return;
     };
 
-    match receiver.try_recv() {
+    let result = receiver
+        .lock()
+        .map(|receiver| receiver.try_recv())
+        .unwrap_or_else(|err| {
+            warn!("Failed to check connection result: {}", err);
+            Err(TryRecvError::Disconnected)
+        });
+
+    match result {
         Ok(ConnectOutcome::Success {
             ip,
             port,
@@ -627,19 +636,22 @@ fn poll_connect_task_results(
                 user: chat.username.clone(),
                 content: format!("Connected to {} ({} ms latency)", address, latency_ms),
             });
+            connect_tasks.receiver = None;
         }
         Ok(ConnectOutcome::Failure { message }) => {
             warn!("{}", message);
             chat.push_system(message);
             network.reset_client();
+            connect_tasks.receiver = None;
         }
         Err(TryRecvError::Disconnected) => {
             warn!("Connection attempt ended unexpectedly");
             chat.push_system("Connection failed: internal error");
             network.reset_client();
+            connect_tasks.receiver = None;
         }
         Err(TryRecvError::Empty) => {
-            connect_tasks.receiver = Some(receiver);
+            // Keep waiting for the background task
         }
     }
 }
