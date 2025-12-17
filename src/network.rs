@@ -7,6 +7,8 @@ pub struct NetworkSession {
     pub host_password: String,
     pub connection_ip: Option<String>,
     pub connection_port: Option<String>,
+    pub last_latency_ms: Option<u128>,
+    pub last_health_ok: bool,
 }
 
 impl NetworkSession {
@@ -14,9 +16,11 @@ impl NetworkSession {
         self.client_connected = false;
         self.connection_ip = None;
         self.connection_port = None;
+        self.last_latency_ms = None;
+        self.last_health_ok = false;
     }
 
     pub fn is_connected(&self) -> bool {
-        self.server_running && self.client_connected
+        self.client_connected
     }
 }

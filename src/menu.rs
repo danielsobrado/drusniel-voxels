@@ -2,6 +2,8 @@ use crate::chat::ChatState;
 use crate::network::NetworkSession;
 use crate::voxel::{meshing::ChunkMesh, persistence, world::VoxelWorld};
 use bevy::{input::keyboard::ReceivedCharacter, prelude::*};
+use std::net::ToSocketAddrs;
+use std::time::{Duration, Instant};
 
 #[derive(Resource, Default, Clone)]
 pub struct FavoriteServer {
@@ -455,13 +457,14 @@ fn handle_menu_buttons(
                 chat.push_system("Server started");
             }
             PauseMenuButton::Connect => {
-                if !network.server_running {
-                    warn!("Cannot connect: server not running");
-                    chat.push_system("Cannot connect: server not running");
+                if form_state.join_ip.is_empty() || form_state.join_port.is_empty() {
+                    warn!("Cannot connect: IP or port missing");
+                    chat.push_system("Cannot connect: IP or port missing");
                     continue;
                 }
 
-                if !network.host_password.is_empty()
+                if network.server_running
+                    && !network.host_password.is_empty()
                     && form_state.join_password != network.host_password
                 {
                     warn!("Cannot connect: password mismatch");
@@ -469,15 +472,52 @@ fn handle_menu_buttons(
                     continue;
                 }
 
+                let port = match form_state.join_port.parse::<u16>() {
+                    Ok(port) => port,
+                    Err(err) => {
+                        warn!("Cannot connect: invalid port - {}", err);
+                        chat.push_system("Cannot connect: invalid port");
+                        continue;
+                    }
+                };
+
+                let address = format!("{}:{}", form_state.join_ip, port);
+                let mut socket_addrs = match address.to_socket_addrs() {
+                    Ok(addrs) => addrs,
+                    Err(err) => {
+                        warn!("Cannot connect: invalid address - {}", err);
+                        chat.push_system("Cannot connect: invalid address");
+                        continue;
+                    }
+                };
+
+                let Some(target_addr) = socket_addrs.next() else {
+                    warn!("Cannot connect: no resolved addresses for {}", address);
+                    chat.push_system("Cannot connect: address could not be resolved");
+                    continue;
+                };
+
+                let start = Instant::now();
+                let ping_result =
+                    std::net::TcpStream::connect_timeout(&target_addr, Duration::from_secs(3));
+                if let Err(err) = ping_result {
+                    warn!("Cannot connect: ping/health check failed - {}", err);
+                    chat.push_system("Connection failed: host unreachable");
+                    network.reset_client();
+                    continue;
+                }
+
+                let latency_ms = start.elapsed().as_millis();
                 network.client_connected = true;
                 network.connection_ip = Some(form_state.join_ip.clone());
                 network.connection_port = Some(form_state.join_port.clone());
+                network.last_latency_ms = Some(latency_ms);
+                network.last_health_ok = true;
 
-                let address = format!("{}:{}", form_state.join_ip, form_state.join_port);
-                info!("Connected to {} with password", address);
+                info!("Connected to {} (latency: {} ms)", address, latency_ms);
                 chat.push_message(crate::chat::ChatMessage {
                     user: chat.username.clone(),
-                    content: format!("Connected to {}", address),
+                    content: format!("Connected to {} ({} ms latency)", address, latency_ms),
                 });
             }
             PauseMenuButton::SaveFavorite => {
