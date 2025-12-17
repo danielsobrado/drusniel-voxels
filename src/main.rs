@@ -1,6 +1,7 @@
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::prelude::*;
 use voxel_builder::camera::plugin::CameraPlugin;
+use voxel_builder::chat::ChatPlugin;
 use voxel_builder::entity::EntityPlugin;
 use voxel_builder::environment::AtmospherePlugin;
 use voxel_builder::interaction::InteractionPlugin;
@@ -21,6 +22,7 @@ fn main() {
         .add_plugins(InteractionPlugin)
         .add_plugins(PickaxePlugin)
         .add_plugins(VegetationPlugin)
+        .add_plugins(ChatPlugin)
         .add_plugins(PauseMenuPlugin)
         .add_plugins(PropsPlugin)
         .add_plugins(AtmospherePlugin)
