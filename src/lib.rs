@@ -1,10 +1,12 @@
 pub mod camera;
+pub mod chat;
 pub mod config;
 pub mod constants;
 pub mod entity;
 pub mod environment;
 pub mod interaction;
 pub mod menu;
+pub mod network;
 pub mod props;
 pub mod rendering;
 pub mod vegetation;
