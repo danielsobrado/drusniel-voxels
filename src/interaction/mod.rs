@@ -1,5 +1,6 @@
 use crate::entity::{Health, Wolf};
 use crate::menu::PauseMenuState;
+use crate::network::NetworkSession;
 use crate::voxel::types::{Voxel, VoxelType};
 use crate::voxel::world::VoxelWorld;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
@@ -30,6 +31,7 @@ impl Default for DebugOverlayState {
 pub struct DebugDetailToggles {
     pub show_vertex_corners: bool,
     pub show_texture_details: bool,
+    pub show_multiplayer: bool,
 }
 
 /// Resource tracking the currently targeted block
@@ -773,6 +775,10 @@ pub fn toggle_debug_details(
     if keyboard.just_pressed(KeyCode::KeyT) {
         toggles.show_texture_details = !toggles.show_texture_details;
     }
+
+    if keyboard.just_pressed(KeyCode::KeyN) {
+        toggles.show_multiplayer = !toggles.show_multiplayer;
+    }
 }
 
 /// Update debug overlay text with real-time info
@@ -782,6 +788,7 @@ pub fn update_debug_overlay(
     world: Res<VoxelWorld>,
     edit_mode: Res<EditMode>,
     drag_state: Res<DragState>,
+    network: Res<NetworkSession>,
     camera_query: Query<&Transform, With<crate::camera::controller::PlayerCamera>>,
     diagnostics: Res<DiagnosticsStore>,
     toggles: Res<DebugDetailToggles>,
@@ -902,6 +909,41 @@ pub fn update_debug_overlay(
         text_content.push_str("Target: None\n");
     }
 
+    if toggles.show_multiplayer {
+        text_content.push_str("\n[Multiplayer]\n");
+        text_content.push_str(&format!(
+            "Hosting: {}\n",
+            if network.server_running { "YES" } else { "NO" }
+        ));
+        text_content.push_str(&format!(
+            "Client connected: {}\n",
+            if network.client_connected {
+                "YES"
+            } else {
+                "NO"
+            }
+        ));
+
+        if let (Some(ip), Some(port)) = (&network.connection_ip, &network.connection_port) {
+            text_content.push_str(&format!("Peer: {}:{}\n", ip, port));
+        }
+
+        let latency = network
+            .last_latency_ms
+            .map(|ms| format!("{ms} ms"))
+            .unwrap_or_else(|| "N/A".to_string());
+        text_content.push_str(&format!("Latency: {}\n", latency));
+
+        text_content.push_str(&format!(
+            "Health: {}\n",
+            if network.last_health_ok {
+                "OK"
+            } else {
+                "Unhealthy"
+            }
+        ));
+    }
+
     text_content.push_str("\n[F3] Toggle overlay");
     text_content.push_str("\n[G] Detailed log");
     text_content.push_str(&format!(
@@ -929,6 +971,14 @@ pub fn update_debug_overlay(
     text_content.push_str(&format!(
         "\n[T] Texture debug: {}",
         if toggles.show_texture_details {
+            "ON"
+        } else {
+            "OFF"
+        }
+    ));
+    text_content.push_str(&format!(
+        "\n[N] Multiplayer debug: {}",
+        if toggles.show_multiplayer {
             "ON"
         } else {
             "OFF"
