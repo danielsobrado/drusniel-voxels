@@ -52,6 +52,7 @@ pub struct EditMode {
 #[derive(Resource, Default)]
 pub struct DragState {
     pub dragged_block: Option<DraggedBlock>,
+    pub rotation_degrees: f32,
 }
 
 pub struct DraggedBlock {
@@ -343,6 +344,7 @@ pub fn toggle_edit_mode(
                 world.set_voxel(dragged.original_position, dragged.block_type);
                 mark_neighbors_dirty(&mut world, dragged.original_position);
             }
+            drag_state.rotation_degrees = 0.0;
             info!("Edit mode disabled");
         }
     }
@@ -375,6 +377,7 @@ pub fn start_dragging_block(
             block_type: voxel_type,
             original_position: pos,
         });
+        drag_state.rotation_degrees = 0.0;
     }
 }
 
@@ -397,6 +400,11 @@ pub fn finish_dragging_block(
 
     if let (Some(block_pos), Some(normal)) = (targeted_block.position, targeted_block.normal) {
         let place_pos = block_pos + normal;
+        let Some(grounded_pos) = find_grounded_position(place_pos, &world) else {
+            world.set_voxel(dragged.original_position, dragged.block_type);
+            mark_neighbors_dirty(&mut world, dragged.original_position);
+            return;
+        };
 
         if let Ok(camera_transform) = camera_query.single() {
             let player_block = IVec3::new(
@@ -410,17 +418,17 @@ pub fn finish_dragging_block(
                 camera_transform.translation.z.floor() as i32,
             );
 
-            if place_pos == player_block || place_pos == player_feet {
+            if grounded_pos == player_block || grounded_pos == player_feet {
                 world.set_voxel(dragged.original_position, dragged.block_type);
                 mark_neighbors_dirty(&mut world, dragged.original_position);
                 return;
             }
         }
 
-        if let Some(existing) = world.get_voxel(place_pos) {
+        if let Some(existing) = world.get_voxel(grounded_pos) {
             if existing == VoxelType::Air || existing == VoxelType::Water {
-                world.set_voxel(place_pos, dragged.block_type);
-                mark_neighbors_dirty(&mut world, place_pos);
+                world.set_voxel(grounded_pos, dragged.block_type);
+                mark_neighbors_dirty(&mut world, grounded_pos);
                 return;
             }
         }
@@ -429,10 +437,87 @@ pub fn finish_dragging_block(
     // Restore to the original position if we couldn't place it elsewhere
     world.set_voxel(dragged.original_position, dragged.block_type);
     mark_neighbors_dirty(&mut world, dragged.original_position);
+    drag_state.rotation_degrees = 0.0;
+}
+
+/// Adjust the dragged block rotation using the scroll wheel or Q/E keys
+pub fn update_drag_rotation(
+    edit_mode: Res<EditMode>,
+    mut drag_state: ResMut<DragState>,
+    mut mouse_wheel: EventReader<MouseWheel>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    if !edit_mode.enabled {
+        return;
+    }
+
+    if drag_state.dragged_block.is_none() {
+        drag_state.rotation_degrees = 0.0;
+        return;
+    }
+
+    let mut rotation_delta = 0.0;
+
+    for wheel in mouse_wheel.read() {
+        rotation_delta += wheel.y * 15.0;
+    }
+
+    if keyboard.just_pressed(KeyCode::KeyQ) {
+        rotation_delta -= 90.0;
+    }
+
+    if keyboard.just_pressed(KeyCode::KeyE) {
+        rotation_delta += 90.0;
+    }
+
+    if rotation_delta.abs() > f32::EPSILON {
+        drag_state.rotation_degrees = (drag_state.rotation_degrees + rotation_delta) % 360.0;
+
+        if drag_state.rotation_degrees < 0.0 {
+            drag_state.rotation_degrees += 360.0;
+        }
+    }
+}
+
+/// Given a desired placement coordinate, drop it to the nearest supported position
+fn find_grounded_position(start: IVec3, world: &VoxelWorld) -> Option<IVec3> {
+    if !world.in_bounds(start) {
+        return None;
+    }
+
+    let mut pos = start;
+
+    // Cannot place inside a solid block
+    match world.get_voxel(pos) {
+        Some(voxel) if voxel.is_solid() => return None,
+        Some(_) => {}
+        None => return None,
+    }
+
+    // Slide downward until we find solid ground
+    loop {
+        let below = pos + IVec3::NEG_Y;
+
+        if !world.in_bounds(below) {
+            return None;
+        }
+
+        match world.get_voxel(below) {
+            Some(voxel) if voxel.is_solid() => return Some(pos),
+            Some(_) => pos = below,
+            None => return None,
+        }
+    }
 }
 
 /// System to render block highlight wireframe
-pub fn render_block_highlight(targeted: Res<TargetedBlock>, mut gizmos: Gizmos) {
+pub fn render_block_highlight(
+    targeted: Res<TargetedBlock>,
+    drag_state: Res<DragState>,
+    edit_mode: Res<EditMode>,
+    world: Res<VoxelWorld>,
+    mut gizmos: Gizmos,
+) {
     if let Some(pos) = targeted.position {
         let center = Vec3::new(pos.x as f32 + 0.5, pos.y as f32 + 0.5, pos.z as f32 + 0.5);
         let half_size = Vec3::splat(0.505); // Slightly larger than block
@@ -442,6 +527,27 @@ pub fn render_block_highlight(targeted: Res<TargetedBlock>, mut gizmos: Gizmos) 
             Transform::from_translation(center).with_scale(half_size * 2.0),
             Color::srgba(1.0, 1.0, 1.0, 0.8),
         );
+
+        // Draw a placement arrow when dragging in edit mode
+        if edit_mode.enabled && drag_state.dragged_block.is_some() {
+            if let Some(normal) = targeted.normal {
+                let desired = pos + normal;
+                if let Some(grounded) = find_grounded_position(desired, &world) {
+                    let placement_center = Vec3::new(
+                        grounded.x as f32 + 0.5,
+                        grounded.y as f32 + 0.5,
+                        grounded.z as f32 + 0.5,
+                    );
+                    let rotation = Quat::from_rotation_y(drag_state.rotation_degrees.to_radians());
+                    let forward = rotation * Vec3::Z;
+                    gizmos.arrow(
+                        placement_center,
+                        placement_center + forward * 0.75,
+                        Color::ORANGE_RED,
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -959,6 +1065,12 @@ pub fn update_debug_overlay(
                 "NO"
             }
         ));
+        if drag_state.dragged_block.is_some() {
+            text_content.push_str(&format!(
+                "\n    Rotation: {:.0}° (scroll/Q/E)",
+                drag_state.rotation_degrees
+            ));
+        }
     }
     text_content.push_str(&format!(
         "\n[V] Vertex corners: {}",
@@ -1010,6 +1122,7 @@ impl Plugin for InteractionPlugin {
                     update_targeted_entity,
                     toggle_edit_mode,
                     start_dragging_block,
+                    update_drag_rotation,
                     finish_dragging_block,
                     attack_entity_system,
                     break_block_system,
