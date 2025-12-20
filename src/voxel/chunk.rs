@@ -1,7 +1,7 @@
 use crate::constants::{CHUNK_SIZE, CHUNK_VOLUME};
 use crate::voxel::types::VoxelType;
 use bevy::prelude::*;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Serializable chunk data (voxels only)
 #[derive(Serialize, Deserialize)]
@@ -10,12 +10,20 @@ pub struct ChunkData {
     pub position: IVec3,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LodLevel {
+    High,
+    Low,
+    Culled,
+}
+
 pub struct Chunk {
     voxels: [VoxelType; CHUNK_VOLUME],
     dirty: bool,
     mesh_entity: Option<Entity>,
     water_mesh_entity: Option<Entity>,
     position: IVec3, // Chunk coords (not world)
+    lod_level: LodLevel,
 }
 
 impl Chunk {
@@ -26,6 +34,7 @@ impl Chunk {
             mesh_entity: None,
             water_mesh_entity: None,
             position,
+            lod_level: LodLevel::High,
         }
     }
 
@@ -82,11 +91,22 @@ impl Chunk {
         self.position
     }
 
+    pub fn lod_level(&self) -> LodLevel {
+        self.lod_level
+    }
+
+    pub fn set_lod_level(&mut self, lod_level: LodLevel) {
+        if self.lod_level != lod_level {
+            self.lod_level = lod_level;
+            self.dirty = true;
+        }
+    }
+
     // For meshing - index conversion
     fn index(x: usize, y: usize, z: usize) -> usize {
         x + (y * CHUNK_SIZE) + (z * CHUNK_SIZE * CHUNK_SIZE)
     }
-    
+
     #[allow(dead_code)]
     fn coords(index: usize) -> (usize, usize, usize) {
         let x = index % CHUNK_SIZE;
@@ -117,7 +137,7 @@ impl Chunk {
             mesh_entity: None,
             water_mesh_entity: None,
             position: data.position,
+            lod_level: LodLevel::High,
         }
     }
 }
-
