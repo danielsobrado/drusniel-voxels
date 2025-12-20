@@ -1,0 +1,53 @@
+use bevy::prelude::*;
+use bevy::render::render_resource::{TextureFormat, TextureFormatFeatureFlags};
+use bevy::render::renderer::{RenderAdapter, RenderAdapterInfo};
+use bevy::render::view::ViewTarget;
+
+#[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
+pub struct GraphicsDetectionSet;
+
+/// Runtime information about the active GPU's rendering capabilities.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct GraphicsCapabilities {
+    pub adapter_name: Option<String>,
+    pub taa_supported: bool,
+}
+
+/// Determine whether the current adapter can support temporal anti-aliasing (TAA).
+pub fn detect_graphics_capabilities(
+    adapter: Option<Res<RenderAdapter>>,
+    adapter_info: Option<Res<RenderAdapterInfo>>,
+    mut commands: Commands,
+) {
+    let mut capabilities = GraphicsCapabilities::default();
+
+    if let (Some(adapter), Some(adapter_info)) = (adapter, adapter_info) {
+        let hdr_features = adapter.get_texture_format_features(ViewTarget::TEXTURE_FORMAT_HDR);
+        let sdr_features = adapter.get_texture_format_features(TextureFormat::bevy_default());
+
+        let hdr_filterable = hdr_features
+            .flags
+            .contains(TextureFormatFeatureFlags::FILTERABLE);
+        let sdr_filterable = sdr_features
+            .flags
+            .contains(TextureFormatFeatureFlags::FILTERABLE);
+
+        capabilities.adapter_name = Some(adapter_info.name.clone());
+        capabilities.taa_supported = hdr_filterable && sdr_filterable;
+
+        info!(
+            adapter = %adapter_info.name,
+            backend = ?adapter_info.backend,
+            taa_supported = capabilities.taa_supported,
+            hdr_filterable,
+            sdr_filterable,
+            "Detected GPU capabilities",
+        );
+    } else {
+        warn!(
+            "Render adapter not available yet; TAA will remain disabled until capabilities are known"
+        );
+    }
+
+    commands.insert_resource(capabilities);
+}

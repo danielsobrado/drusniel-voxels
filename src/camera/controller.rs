@@ -1,13 +1,16 @@
 use crate::interaction::palette::PlacementPaletteState;
 use crate::menu::PauseMenuState;
+use crate::rendering::capabilities::GraphicsCapabilities;
 use crate::voxel::types::Voxel;
 use crate::voxel::world::VoxelWorld;
+use bevy::anti_alias::taa::TemporalAntiAliasing;
 use bevy::core_pipeline::Skybox;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::input::mouse::MouseMotion;
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
+use bevy::render::view::Msaa;
 use bevy::window::{CursorGrabMode, CursorOptions};
 use bevy_water::ImageReformat;
 
@@ -61,7 +64,11 @@ impl Default for PlayerCamera {
     }
 }
 
-pub fn spawn_camera(mut commands: Commands, asset_server: Res<AssetServer>) {
+pub fn spawn_camera(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    capabilities: Res<GraphicsCapabilities>,
+) {
     // Load the skybox cubemap image with cubemap reformat
     let skybox_image = ImageReformat::cubemap(
         &mut commands,
@@ -69,7 +76,7 @@ pub fn spawn_camera(mut commands: Commands, asset_server: Res<AssetServer>) {
         "textures/table_mountain_2_puresky_4k_cubemap.jpg",
     );
 
-    commands.spawn((
+    let mut camera = commands.spawn((
         Camera3d::default(),
         Bloom {
             intensity: 0.06, // Subtle glow on bright highlights
@@ -93,6 +100,11 @@ pub fn spawn_camera(mut commands: Commands, asset_server: Res<AssetServer>) {
             falloff: FogFalloff::ExponentialSquared { density: 0.0015 },
         },
     ));
+
+    if capabilities.taa_supported {
+        camera.insert(TemporalAntiAliasing::default());
+        commands.insert_resource(Msaa::Off);
+    }
 }
 
 pub fn player_camera_system(
