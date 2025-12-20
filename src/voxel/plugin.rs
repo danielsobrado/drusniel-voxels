@@ -1,13 +1,14 @@
-use bevy::prelude::*;
+use crate::camera::controller::PlayerCamera;
 use crate::constants::{CHUNK_SIZE, CHUNK_SIZE_I32};
-use crate::voxel::chunk::Chunk;
-use crate::voxel::meshing::{generate_chunk_mesh_with_mode, MeshSettings, MeshMode};
-use crate::voxel::types::VoxelType;
-use crate::voxel::world::VoxelWorld;
-use crate::voxel::persistence::{self, WorldPersistence};
 use crate::rendering::materials::VoxelMaterial;
 use crate::rendering::triplanar_material::TriplanarMaterialHandle;
+use crate::voxel::chunk::{Chunk, LodLevel};
 use crate::voxel::gravity::GravityPlugin;
+use crate::voxel::meshing::{MeshMode, MeshSettings, generate_chunk_mesh_with_mode};
+use crate::voxel::persistence::{self, WorldPersistence};
+use crate::voxel::types::VoxelType;
+use crate::voxel::world::VoxelWorld;
+use bevy::prelude::*;
 
 pub struct VoxelPlugin;
 
@@ -18,28 +19,58 @@ pub struct WorldConfig {
     pub greedy_meshing: bool,
 }
 
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct LodSettings {
+    /// Distance in world units for high detail meshing (Surface Nets by default).
+    pub high_detail_distance: f32,
+    /// Distance in world units at which chunks are culled entirely.
+    pub cull_distance: f32,
+    /// Mesh mode to use for far chunks that are still visible.
+    pub low_detail_mode: MeshMode,
+}
+
+impl Default for LodSettings {
+    fn default() -> Self {
+        Self {
+            high_detail_distance: 96.0,
+            cull_distance: 192.0,
+            low_detail_mode: MeshMode::Blocky,
+        }
+    }
+}
+
 impl Plugin for VoxelPlugin {
     fn build(&self, app: &mut App) {
-        app
-            .insert_resource(WorldConfig {
-                size_chunks: IVec3::new(32, 4, 32),
-                chunk_size: 16,
-                greedy_meshing: true,
-            })
-            .insert_resource(VoxelWorld::new(IVec3::new(32, 4, 32)))
-            // Use SurfaceNets for smooth terrain meshing (change to Blocky for Minecraft-style)
-            .insert_resource(MeshSettings { mode: MeshMode::SurfaceNets })
-            // World persistence settings (set force_regenerate to true to regenerate)
-            .insert_resource(WorldPersistence { force_regenerate: false, ..default() })
-            .add_systems(Startup, setup_voxel_world)
-            .add_systems(Update, mesh_dirty_chunks_system);
-            // .add_plugins(GravityPlugin); // Deactivated due to performance impact
+        app.insert_resource(WorldConfig {
+            size_chunks: IVec3::new(32, 4, 32),
+            chunk_size: 16,
+            greedy_meshing: true,
+        })
+        .insert_resource(VoxelWorld::new(IVec3::new(32, 4, 32)))
+        // Use SurfaceNets for smooth terrain meshing (change to Blocky for Minecraft-style)
+        .insert_resource(MeshSettings {
+            mode: MeshMode::SurfaceNets,
+        })
+        .insert_resource(LodSettings::default())
+        // World persistence settings (set force_regenerate to true to regenerate)
+        .insert_resource(WorldPersistence {
+            force_regenerate: false,
+            ..default()
+        })
+        .add_systems(Startup, setup_voxel_world)
+        .add_systems(
+            Update,
+            (update_chunk_lod_system, mesh_dirty_chunks_system).chain(),
+        );
+        // .add_plugins(GravityPlugin); // Deactivated due to performance impact
     }
 }
 
 // Simple pseudo-random noise functions for terrain generation
 fn hash(x: i32, z: i32) -> f32 {
-    let n = x.wrapping_mul(374761393).wrapping_add(z.wrapping_mul(668265263));
+    let n = x
+        .wrapping_mul(374761393)
+        .wrapping_add(z.wrapping_mul(668265263));
     let n = (n ^ (n >> 13)).wrapping_mul(1274126177);
     ((n ^ (n >> 16)) as u32 as f32) / u32::MAX as f32
 }
@@ -148,9 +179,9 @@ fn is_cave(world_x: i32, world_y: i32, world_z: i32) -> bool {
 
 fn is_dungeon_wall(world_x: i32, world_y: i32, world_z: i32) -> Option<VoxelType> {
     // Create dungeon structures at specific locations
-    let dungeon_spacing = 96;  // Closer spacing for more dungeons
+    let dungeon_spacing = 96; // Closer spacing for more dungeons
     let dungeon_size = 20;
-    let dungeon_floor_y = 3;  // Dungeon floor level
+    let dungeon_floor_y = 3; // Dungeon floor level
     let dungeon_height = 12; // Dungeon interior height
 
     let dx = ((world_x % dungeon_spacing) + dungeon_spacing) % dungeon_spacing;
@@ -162,8 +193,11 @@ fn is_dungeon_wall(world_x: i32, world_y: i32, world_z: i32) -> Option<VoxelType
     let entrance_z = 2;
     let entrance_size = 3;
 
-    if dx >= entrance_x && dx < entrance_x + entrance_size &&
-       dz >= entrance_z && dz < entrance_z + entrance_size {
+    if dx >= entrance_x
+        && dx < entrance_x + entrance_size
+        && dz >= entrance_z
+        && dz < entrance_z + entrance_size
+    {
         // Staircase from surface down to dungeon
         // Stairs go from Y=dungeon_floor_y+1 up to Y=50 (well above terrain)
         if world_y > dungeon_floor_y && world_y <= 50 {
@@ -171,8 +205,10 @@ fn is_dungeon_wall(world_x: i32, world_y: i32, world_z: i32) -> Option<VoxelType
             let stair_local_z = dz - entrance_z;
 
             // Create spiral/straight staircase walls
-            let is_stair_wall = stair_local_x == 0 || stair_local_x == entrance_size - 1 ||
-                               stair_local_z == 0 || stair_local_z == entrance_size - 1;
+            let is_stair_wall = stair_local_x == 0
+                || stair_local_x == entrance_size - 1
+                || stair_local_z == 0
+                || stair_local_z == entrance_size - 1;
 
             // Interior is air (the stairwell)
             if is_stair_wall && stair_local_x != 1 && stair_local_z != 1 {
@@ -185,7 +221,11 @@ fn is_dungeon_wall(world_x: i32, world_y: i32, world_z: i32) -> Option<VoxelType
     }
 
     // Check if we're in a dungeon area
-    if dx < dungeon_size && dz < dungeon_size && world_y >= dungeon_floor_y && world_y <= dungeon_floor_y + dungeon_height + 3 {
+    if dx < dungeon_size
+        && dz < dungeon_size
+        && world_y >= dungeon_floor_y
+        && world_y <= dungeon_floor_y + dungeon_height + 3
+    {
         let local_x = dx;
         let local_z = dz;
         let local_y = world_y - dungeon_floor_y;
@@ -196,16 +236,24 @@ fn is_dungeon_wall(world_x: i32, world_y: i32, world_z: i32) -> Option<VoxelType
         }
 
         // Create room walls
-        let is_outer_wall = local_x == 0 || local_x == dungeon_size - 1 ||
-                           local_z == 0 || local_z == dungeon_size - 1;
+        let is_outer_wall = local_x == 0
+            || local_x == dungeon_size - 1
+            || local_z == 0
+            || local_z == dungeon_size - 1;
 
         // Create inner walls forming corridors
-        let wall_at_x = (local_x % 8 == 0 || local_x % 8 == 1) && local_x > 0 && local_x < dungeon_size - 1;
-        let wall_at_z = (local_z % 8 == 0 || local_z % 8 == 1) && local_z > 0 && local_z < dungeon_size - 1;
+        let wall_at_x =
+            (local_x % 8 == 0 || local_x % 8 == 1) && local_x > 0 && local_x < dungeon_size - 1;
+        let wall_at_z =
+            (local_z % 8 == 0 || local_z % 8 == 1) && local_z > 0 && local_z < dungeon_size - 1;
 
         // Doorways in inner walls
-        let doorway_x = local_z >= 3 && local_z <= 5 || local_z >= 11 && local_z <= 13 || local_z >= 17 && local_z <= 19;
-        let doorway_z = local_x >= 3 && local_x <= 5 || local_x >= 11 && local_x <= 13 || local_x >= 17 && local_x <= 19;
+        let doorway_x = local_z >= 3 && local_z <= 5
+            || local_z >= 11 && local_z <= 13
+            || local_z >= 17 && local_z <= 19;
+        let doorway_z = local_x >= 3 && local_x <= 5
+            || local_x >= 11 && local_x <= 13
+            || local_x >= 17 && local_x <= 19;
 
         let is_inner_wall = (wall_at_x && !doorway_x) || (wall_at_z && !doorway_z);
 
@@ -214,13 +262,18 @@ fn is_dungeon_wall(world_x: i32, world_y: i32, world_z: i32) -> Option<VoxelType
         let is_ceiling = local_y == dungeon_height;
 
         // Pillars at intersections
-        let is_pillar = (local_x % 8 <= 1) && (local_z % 8 <= 1) &&
-                       local_x > 0 && local_x < dungeon_size - 1 &&
-                       local_z > 0 && local_z < dungeon_size - 1;
+        let is_pillar = (local_x % 8 <= 1)
+            && (local_z % 8 <= 1)
+            && local_x > 0
+            && local_x < dungeon_size - 1
+            && local_z > 0
+            && local_z < dungeon_size - 1;
 
         // Don't place ceiling over entrance
-        let over_entrance = dx >= entrance_x && dx < entrance_x + entrance_size &&
-                           dz >= entrance_z && dz < entrance_z + entrance_size;
+        let over_entrance = dx >= entrance_x
+            && dx < entrance_x + entrance_size
+            && dz >= entrance_z
+            && dz < entrance_z + entrance_size;
 
         if is_floor {
             return Some(VoxelType::DungeonFloor);
@@ -262,11 +315,11 @@ fn is_tree_trunk(world_x: i32, world_y: i32, world_z: i32, terrain_height: i32) 
     if !should_spawn_tree(world_x, world_z, terrain_height) {
         return false;
     }
-    
+
     let trunk_height = get_tree_height(world_x, world_z);
     let trunk_bottom = terrain_height + 1;
     let trunk_top = trunk_bottom + trunk_height;
-    
+
     world_y >= trunk_bottom && world_y < trunk_top
 }
 
@@ -274,27 +327,27 @@ fn is_tree_trunk(world_x: i32, world_y: i32, world_z: i32, terrain_height: i32) 
 fn is_tree_leaves(world_x: i32, world_y: i32, world_z: i32) -> bool {
     // Check nearby positions for tree trunks
     let radius = 3;
-    
+
     for dx in -radius..=radius {
         for dz in -radius..=radius {
             let check_x = world_x + dx;
             let check_z = world_z + dz;
-            
+
             let check_height = get_terrain_height(check_x, check_z);
-            
+
             if should_spawn_tree(check_x, check_z, check_height) {
                 let trunk_height = get_tree_height(check_x, check_z);
                 let trunk_top = check_height + 1 + trunk_height;
                 let leaf_center_y = trunk_top - 1;
-                
+
                 // Spherical leaf shape
                 let dx_f = dx as f32;
                 let dz_f = dz as f32;
                 let dy_f = (world_y - leaf_center_y) as f32;
-                
+
                 let dist_sq = dx_f * dx_f + dy_f * dy_f * 1.5 + dz_f * dz_f;
                 let leaf_radius = 2.5;
-                
+
                 if dist_sq < leaf_radius * leaf_radius {
                     // Don't place leaves where trunk is
                     if !(dx == 0 && dz == 0 && world_y < trunk_top) {
@@ -304,7 +357,7 @@ fn is_tree_leaves(world_x: i32, world_y: i32, world_z: i32) -> bool {
             }
         }
     }
-    
+
     false
 }
 
@@ -314,10 +367,7 @@ pub const WATER_LEVEL: i32 = 18;
 // Debug flat world toggle (disabled by default)
 const DEBUG_FLAT_WORLD: bool = false;
 
-fn setup_voxel_world(
-    mut world: ResMut<VoxelWorld>,
-    persistence_settings: Res<WorldPersistence>,
-) {
+fn setup_voxel_world(mut world: ResMut<VoxelWorld>, persistence_settings: Res<WorldPersistence>) {
     // Try to load saved world unless force_regenerate is set
     if !persistence_settings.force_regenerate && persistence::saved_world_exists() {
         info!("Loading saved world from disk...");
@@ -403,7 +453,11 @@ fn setup_voxel_world(
                     }
 
                     let voxel = if DEBUG_FLAT_WORLD {
-                        if world_y <= 12 { VoxelType::TopSoil } else { VoxelType::Air }
+                        if world_y <= 12 {
+                            VoxelType::TopSoil
+                        } else {
+                            VoxelType::Air
+                        }
                     } else if world_y > terrain_height {
                         // Above terrain - check if below water level (lakes/rivers)
                         if world_y <= WATER_LEVEL {
@@ -508,10 +562,13 @@ fn setup_voxel_world(
         total_dungeon_floor += dungeon_floor_count;
 
         if dungeon_wall_count > 0 || dungeon_floor_count > 0 {
-            info!("Chunk {:?} (world pos {:?}) has {} dungeon walls, {} dungeon floors",
-                  chunk_pos,
-                  IVec3::new(chunk_world_x, chunk_world_y, chunk_world_z),
-                  dungeon_wall_count, dungeon_floor_count);
+            info!(
+                "Chunk {:?} (world pos {:?}) has {} dungeon walls, {} dungeon floors",
+                chunk_pos,
+                IVec3::new(chunk_world_x, chunk_world_y, chunk_world_z),
+                dungeon_wall_count,
+                dungeon_floor_count
+            );
         }
     }
 
@@ -542,6 +599,7 @@ fn mesh_dirty_chunks_system(
     triplanar_material: Res<TriplanarMaterialHandle>,
     water_material: Res<crate::rendering::materials::WaterMaterial>,
     mesh_settings: Res<MeshSettings>,
+    lod_settings: Res<LodSettings>,
 ) {
     // Bail out until the blocky material is ready to avoid panicking when resources are still loading.
     let blocky_material = match blocky_material {
@@ -553,9 +611,36 @@ fn mesh_dirty_chunks_system(
     let dirty_chunks: Vec<IVec3> = world.dirty_chunks().collect();
 
     for chunk_pos in dirty_chunks {
+        let (target_mode, lod_level) = if let Some(chunk) = world.get_chunk(chunk_pos) {
+            let target_mode = match chunk.lod_level() {
+                LodLevel::High => mesh_settings.mode,
+                LodLevel::Low => lod_settings.low_detail_mode,
+                LodLevel::Culled => lod_settings.low_detail_mode,
+            };
+
+            (target_mode, chunk.lod_level())
+        } else {
+            continue;
+        };
+
+        if lod_level == LodLevel::Culled {
+            if let Some(chunk) = world.get_chunk_mut(chunk_pos) {
+                if let Some(entity) = chunk.mesh_entity() {
+                    commands.entity(entity).despawn();
+                    chunk.clear_mesh_entity();
+                }
+                if let Some(entity) = chunk.water_mesh_entity() {
+                    commands.entity(entity).despawn();
+                    chunk.clear_water_mesh_entity();
+                }
+                chunk.clear_dirty();
+            }
+            continue;
+        }
+
         // Step 1: Generate mesh data using immutable borrow
         let mesh_result = if let Some(chunk) = world.get_chunk(chunk_pos) {
-            generate_chunk_mesh_with_mode(chunk, &world, mesh_settings.mode)
+            generate_chunk_mesh_with_mode(chunk, &world, target_mode)
         } else {
             continue;
         };
@@ -582,27 +667,39 @@ fn mesh_dirty_chunks_system(
                 } else {
                     // Spawn with appropriate material based on mesh mode
                     let entity = match mesh_settings.mode {
-                        MeshMode::Blocky => {
-                            commands.spawn((
+                        MeshMode::Blocky => commands
+                            .spawn((
                                 Mesh3d(mesh_handle),
                                 MeshMaterial3d(blocky_material.handle.clone()),
-                                Transform::from_xyz(world_pos.x as f32, world_pos.y as f32, world_pos.z as f32),
-                                crate::voxel::meshing::ChunkMesh { chunk_position: chunk_pos },
-                            )).id()
-                        }
-                        MeshMode::SurfaceNets => {
-                            commands.spawn((
+                                Transform::from_xyz(
+                                    world_pos.x as f32,
+                                    world_pos.y as f32,
+                                    world_pos.z as f32,
+                                ),
+                                crate::voxel::meshing::ChunkMesh {
+                                    chunk_position: chunk_pos,
+                                },
+                            ))
+                            .id(),
+                        MeshMode::SurfaceNets => commands
+                            .spawn((
                                 Mesh3d(mesh_handle),
                                 MeshMaterial3d(triplanar_material.handle.clone()),
-                                Transform::from_xyz(world_pos.x as f32, world_pos.y as f32, world_pos.z as f32),
-                                crate::voxel::meshing::ChunkMesh { chunk_position: chunk_pos },
-                            )).id()
-                        }
+                                Transform::from_xyz(
+                                    world_pos.x as f32,
+                                    world_pos.y as f32,
+                                    world_pos.z as f32,
+                                ),
+                                crate::voxel::meshing::ChunkMesh {
+                                    chunk_position: chunk_pos,
+                                },
+                            ))
+                            .id(),
                     };
                     chunk.set_mesh_entity(entity);
                 }
             }
-            
+
             // Handle water mesh
             if mesh_result.water.is_empty() {
                 if let Some(entity) = chunk.water_mesh_entity() {
@@ -616,15 +713,51 @@ fn mesh_dirty_chunks_system(
                 if let Some(entity) = chunk.water_mesh_entity() {
                     commands.entity(entity).insert(Mesh3d(water_mesh_handle));
                 } else {
-                    let entity = commands.spawn((
-                        Mesh3d(water_mesh_handle),
-                        MeshMaterial3d(water_material.handle.clone()),
-                        Transform::from_xyz(world_pos.x as f32, world_pos.y as f32, world_pos.z as f32),
-                        crate::voxel::meshing::ChunkMesh { chunk_position: chunk_pos },
-                    )).id();
+                    let entity = commands
+                        .spawn((
+                            Mesh3d(water_mesh_handle),
+                            MeshMaterial3d(water_material.handle.clone()),
+                            Transform::from_xyz(
+                                world_pos.x as f32,
+                                world_pos.y as f32,
+                                world_pos.z as f32,
+                            ),
+                            crate::voxel::meshing::ChunkMesh {
+                                chunk_position: chunk_pos,
+                            },
+                        ))
+                        .id();
                     chunk.set_water_mesh_entity(entity);
                 }
             }
         }
+    }
+}
+
+fn update_chunk_lod_system(
+    mut world: ResMut<VoxelWorld>,
+    camera_query: Query<&Transform, With<PlayerCamera>>,
+    lod_settings: Res<LodSettings>,
+) {
+    let Ok(camera_transform) = camera_query.get_single() else {
+        return;
+    };
+
+    let camera_pos = camera_transform.translation;
+
+    for (chunk_pos, chunk) in world.chunk_entries_mut() {
+        let world_pos = VoxelWorld::chunk_to_world(*chunk_pos);
+        let chunk_center = world_pos.as_vec3() + Vec3::splat(CHUNK_SIZE as f32 * 0.5);
+        let distance = chunk_center.distance(camera_pos);
+
+        let target_lod = if distance <= lod_settings.high_detail_distance {
+            LodLevel::High
+        } else if distance <= lod_settings.cull_distance {
+            LodLevel::Low
+        } else {
+            LodLevel::Culled
+        };
+
+        chunk.set_lod_level(target_lod);
     }
 }
