@@ -1,10 +1,12 @@
 use crate::entity::{Health, Wolf};
+use crate::interaction::palette::{PlacementPaletteState, PlacementSelection};
 use crate::menu::PauseMenuState;
 use crate::network::NetworkSession;
 use crate::voxel::types::{Voxel, VoxelType};
 use crate::voxel::world::VoxelWorld;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::prelude::*;
+mod palette;
 
 /// Component to mark the block highlight entity
 #[derive(Component)]
@@ -256,12 +258,26 @@ pub fn break_block_system(
 pub fn place_block_system(
     mouse: Res<ButtonInput<MouseButton>>,
     edit_mode: Res<EditMode>,
+    delete_mode: Res<DeleteMode>,
     targeted: Res<TargetedBlock>,
     mut world: ResMut<VoxelWorld>,
     held: Res<HeldBlock>,
     camera_query: Query<&Transform, With<crate::camera::controller::PlayerCamera>>,
+    drag_state: Res<DragState>,
+    palette: Res<PlacementPaletteState>,
 ) {
-    if edit_mode.enabled {
+    let placing_in_edit_mode = edit_mode.enabled
+        && palette
+            .active_selection
+            .as_ref()
+            .map(|selection| matches!(selection, PlacementSelection::Voxel(_)))
+            .unwrap_or(false);
+
+    if edit_mode.enabled && !placing_in_edit_mode {
+        return;
+    }
+
+    if delete_mode.enabled || drag_state.dragged_block.is_some() {
         return;
     }
 
@@ -1182,21 +1198,29 @@ impl Plugin for InteractionPlugin {
             .init_resource::<DragState>()
             .init_resource::<DebugOverlayState>()
             .init_resource::<DebugDetailToggles>()
+            .init_resource::<palette::PaletteItems>()
+            .init_resource::<PlacementPaletteState>()
             .add_systems(Startup, setup_debug_overlay)
             .add_systems(
                 Update,
                 (
                     update_targeted_block,
                     update_targeted_entity,
+                    palette::initialize_palette_items,
+                    palette::toggle_palette,
+                    palette::handle_palette_input,
                     toggle_edit_mode,
                     toggle_delete_mode,
                     start_dragging_block,
+                    palette::handle_palette_item_click,
                     delete_block_in_edit_mode,
                     update_drag_rotation,
                     finish_dragging_block,
+                    palette::place_prop_from_palette,
                     attack_entity_system,
                     break_block_system,
                     place_block_system,
+                    palette::refresh_palette_ui,
                     render_block_highlight,
                     debug_voxel_info_system,
                     toggle_debug_overlay,
