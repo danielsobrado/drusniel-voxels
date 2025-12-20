@@ -107,6 +107,45 @@ pub fn spawn_camera(
     }
 }
 
+/// React to GPU capability changes by enabling or disabling TAA on existing cameras.
+pub fn apply_taa_capabilities(
+    mut commands: Commands,
+    capabilities: Res<GraphicsCapabilities>,
+    mut msaa: Option<ResMut<Msaa>>,
+    cameras: Query<(Entity, Option<&TemporalAntiAliasing>), With<Camera3d>>,
+) {
+    if !capabilities.is_changed() {
+        return;
+    }
+
+    if capabilities.taa_supported {
+        for (entity, taa) in cameras.iter() {
+            if taa.is_none() {
+                commands
+                    .entity(entity)
+                    .insert(TemporalAntiAliasing::default());
+            }
+        }
+
+        match msaa {
+            Some(mut msaa) => {
+                if *msaa != Msaa::Off {
+                    *msaa = Msaa::Off;
+                }
+            }
+            None => {
+                commands.insert_resource(Msaa::Off);
+            }
+        }
+    } else {
+        for (entity, taa) in cameras.iter() {
+            if taa.is_some() {
+                commands.entity(entity).remove::<TemporalAntiAliasing>();
+            }
+        }
+    }
+}
+
 pub fn player_camera_system(
     mut query: Query<(&mut Transform, &mut PlayerCamera)>,
     keys: Res<ButtonInput<KeyCode>>,

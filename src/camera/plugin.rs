@@ -1,5 +1,5 @@
-use crate::camera::controller::{player_camera_system, spawn_camera};
-use crate::rendering::capabilities::GraphicsDetectionSet;
+use crate::camera::controller::{apply_taa_capabilities, player_camera_system, spawn_camera};
+use crate::rendering::capabilities::{GraphicsCapabilities, GraphicsDetectionSet};
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions};
 
@@ -13,7 +13,13 @@ impl Plugin for CameraPlugin {
                 .chain()
                 .after(GraphicsDetectionSet),
         )
-        .add_systems(Update, player_camera_system);
+        .add_systems(
+            Update,
+            (
+                player_camera_system,
+                apply_taa_capabilities.run_if(resource_changed::<GraphicsCapabilities>()),
+            ),
+        );
     }
 }
 
