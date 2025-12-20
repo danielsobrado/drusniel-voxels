@@ -1,3 +1,4 @@
+use crate::interaction::palette::PlacementPaletteState;
 use crate::menu::PauseMenuState;
 use crate::voxel::types::Voxel;
 use crate::voxel::world::VoxelWorld;
@@ -102,13 +103,14 @@ pub fn player_camera_system(
     mut windows: Query<(&mut Window, &mut CursorOptions)>,
     world: Res<VoxelWorld>,
     pause_menu: Res<PauseMenuState>,
+    palette: Res<PlacementPaletteState>,
 ) {
     let Ok((_window, mut cursor_options)) = windows.single_mut() else {
         return;
     };
     let dt = time.delta_secs();
 
-    if pause_menu.open {
+    if pause_menu.open || palette.open {
         cursor_options.visible = true;
         cursor_options.grab_mode = CursorGrabMode::None;
         return;
