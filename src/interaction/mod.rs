@@ -1200,7 +1200,9 @@ impl Plugin for InteractionPlugin {
             .init_resource::<DebugDetailToggles>()
             .init_resource::<palette::PaletteItems>()
             .init_resource::<PlacementPaletteState>()
+            .init_resource::<palette::BookmarkStore>()
             .add_systems(Startup, setup_debug_overlay)
+            .add_systems(Startup, palette::load_bookmarks)
             .add_systems(
                 Update,
                 (
@@ -1209,6 +1211,7 @@ impl Plugin for InteractionPlugin {
                     palette::initialize_palette_items,
                     palette::toggle_palette,
                     palette::handle_palette_input,
+                    palette::handle_bookmark_buttons,
                     toggle_edit_mode,
                     toggle_delete_mode,
                     start_dragging_block,
@@ -1217,6 +1220,7 @@ impl Plugin for InteractionPlugin {
                     update_drag_rotation,
                     finish_dragging_block,
                     palette::place_prop_from_palette,
+                    palette::persist_bookmarks,
                     attack_entity_system,
                     break_block_system,
                     place_block_system,

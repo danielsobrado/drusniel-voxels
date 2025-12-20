@@ -1,9 +1,13 @@
+use crate::camera::controller::PlayerCamera;
 use crate::chat::ChatState;
 use crate::menu::PauseMenuState;
 use crate::props::{Prop, PropAssets, PropConfig, PropType};
 use crate::voxel::types::VoxelType;
 use bevy::input::keyboard::ReceivedCharacter;
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
 
 #[derive(Clone, PartialEq)]
 pub enum PlacementSelection {
@@ -31,6 +35,31 @@ pub struct PlacementPaletteState {
     pub root: Option<Entity>,
 }
 
+#[derive(Resource)]
+pub struct BookmarkStore {
+    pub file_path: PathBuf,
+    pub bookmarks: Vec<Bookmark>,
+    pub dirty: bool,
+}
+
+impl Default for BookmarkStore {
+    fn default() -> Self {
+        Self {
+            file_path: PathBuf::from("bookmarks.json"),
+            bookmarks: Vec::new(),
+            dirty: false,
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Bookmark {
+    pub name: String,
+    pub position: [f32; 3],
+    pub yaw: f32,
+    pub pitch: f32,
+}
+
 #[derive(Component)]
 struct PaletteRoot;
 
@@ -45,6 +74,18 @@ struct PaletteSelectionText;
 
 #[derive(Component)]
 struct PaletteItemButton(usize);
+
+#[derive(Component)]
+struct SaveBookmarkButton;
+
+#[derive(Component)]
+struct BookmarkList;
+
+#[derive(Component)]
+struct BookmarkTeleportButton(usize);
+
+#[derive(Component)]
+struct BookmarkDeleteButton(usize);
 
 pub fn initialize_palette_items(
     mut items: ResMut<PaletteItems>,
@@ -101,6 +142,20 @@ pub fn initialize_palette_items(
     items.0 = all_items;
     palette.items_initialized = true;
     palette.needs_redraw = palette.open;
+}
+
+pub fn load_bookmarks(mut store: ResMut<BookmarkStore>) {
+    match fs::read_to_string(&store.file_path) {
+        Ok(content) => match serde_json::from_str::<Vec<Bookmark>>(&content) {
+            Ok(bookmarks) => store.bookmarks = bookmarks,
+            Err(err) => warn!("Failed to parse bookmark file: {err}"),
+        },
+        Err(err) => {
+            if err.kind() != std::io::ErrorKind::NotFound {
+                warn!("Failed to read bookmark file: {err}");
+            }
+        }
+    }
 }
 
 pub fn toggle_palette(
@@ -191,12 +246,80 @@ pub fn handle_palette_item_click(
     }
 }
 
+pub fn handle_bookmark_buttons(
+    mut save_buttons: Query<&Interaction, (Changed<Interaction>, With<SaveBookmarkButton>)>,
+    mut teleport_buttons: Query<(&Interaction, &BookmarkTeleportButton), Changed<Interaction>>,
+    mut delete_buttons: Query<(&Interaction, &BookmarkDeleteButton), Changed<Interaction>>,
+    mut camera_query: Query<(&mut Transform, &mut PlayerCamera)>,
+    camera_read_query: Query<(&Transform, &PlayerCamera)>,
+    mut palette: ResMut<PlacementPaletteState>,
+    mut store: ResMut<BookmarkStore>,
+) {
+    if !palette.open {
+        return;
+    }
+
+    for interaction in save_buttons.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            if let Ok((transform, camera)) = camera_read_query.get_single() {
+                let name = if palette.search.is_empty() {
+                    format!("Bookmark {}", store.bookmarks.len() + 1)
+                } else {
+                    palette.search.clone()
+                };
+
+                store.bookmarks.push(Bookmark {
+                    name,
+                    position: transform.translation.to_array(),
+                    yaw: camera.yaw,
+                    pitch: camera.pitch,
+                });
+                store.dirty = true;
+                palette.needs_redraw = true;
+            }
+        }
+    }
+
+    for (interaction, BookmarkTeleportButton(index)) in teleport_buttons.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            if let Some(bookmark) = store.bookmarks.get(*index).cloned() {
+                if let Ok((mut transform, mut camera)) = camera_query.get_single_mut() {
+                    transform.translation = Vec3::from_array(bookmark.position);
+                    transform.rotation =
+                        Quat::from_euler(EulerRot::YXZ, bookmark.yaw, bookmark.pitch, 0.0);
+                    camera.yaw = bookmark.yaw;
+                    camera.pitch = bookmark.pitch;
+                    camera.velocity = Vec3::ZERO;
+                    palette.needs_redraw = true;
+                }
+            }
+        }
+    }
+
+    let mut removed = false;
+    for (interaction, BookmarkDeleteButton(index)) in delete_buttons.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            if *index < store.bookmarks.len() {
+                store.bookmarks.remove(*index);
+                removed = true;
+            }
+        }
+    }
+
+    if removed {
+        store.dirty = true;
+        palette.needs_redraw = true;
+    }
+}
+
 pub fn refresh_palette_ui(
     items: Res<PaletteItems>,
     mut palette: ResMut<PlacementPaletteState>,
+    store: Res<BookmarkStore>,
     mut search_query: Query<&mut Text, With<PaletteSearchText>>,
     mut selection_query: Query<&mut Text, With<PaletteSelectionText>>,
     list_query: Query<Entity, With<PaletteList>>,
+    bookmark_query: Query<Entity, With<BookmarkList>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
@@ -297,6 +420,98 @@ pub fn refresh_palette_ui(
                             ..default()
                         });
                     }
+                });
+            });
+        }
+    }
+
+    if let Ok(list_entity) = bookmark_query.get_single() {
+        commands.entity(list_entity).despawn_descendants();
+
+        let font = asset_server.load("fonts/FiraSans-Bold.ttf");
+
+        for (index, bookmark) in store.bookmarks.iter().enumerate() {
+            let name = format!(
+                "{} (x: {:.1}, y: {:.1}, z: {:.1})",
+                bookmark.name, bookmark.position[0], bookmark.position[1], bookmark.position[2]
+            );
+
+            commands.entity(list_entity).with_children(|list| {
+                list.spawn(NodeBundle {
+                    style: Style {
+                        flex_direction: FlexDirection::Row,
+                        justify_content: JustifyContent::SpaceBetween,
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(6.0),
+                        padding: UiRect::all(Val::Px(4.0)),
+                        margin: UiRect::bottom(Val::Px(4.0)),
+                        ..default()
+                    },
+                    background_color: Color::srgba(0.12, 0.12, 0.15, 0.8).into(),
+                    ..default()
+                })
+                .with_children(|row| {
+                    row.spawn(TextBundle {
+                        text: Text::from_section(
+                            name,
+                            TextStyle {
+                                font: font.clone(),
+                                font_size: 12.0,
+                                color: Color::WHITE,
+                            },
+                        ),
+                        ..default()
+                    });
+
+                    row.spawn((
+                        ButtonBundle {
+                            style: Style {
+                                padding: UiRect::axes(Val::Px(8.0), Val::Px(6.0)),
+                                ..default()
+                            },
+                            background_color: Color::srgba(0.2, 0.35, 0.2, 0.85).into(),
+                            ..default()
+                        },
+                        BookmarkTeleportButton(index),
+                    ))
+                    .with_children(|button| {
+                        button.spawn(TextBundle {
+                            text: Text::from_section(
+                                "Teleport",
+                                TextStyle {
+                                    font: font.clone(),
+                                    font_size: 12.0,
+                                    color: Color::WHITE,
+                                },
+                            ),
+                            ..default()
+                        });
+                    });
+
+                    row.spawn((
+                        ButtonBundle {
+                            style: Style {
+                                padding: UiRect::axes(Val::Px(8.0), Val::Px(6.0)),
+                                ..default()
+                            },
+                            background_color: Color::srgba(0.35, 0.15, 0.15, 0.85).into(),
+                            ..default()
+                        },
+                        BookmarkDeleteButton(index),
+                    ))
+                    .with_children(|button| {
+                        button.spawn(TextBundle {
+                            text: Text::from_section(
+                                "Delete",
+                                TextStyle {
+                                    font: font.clone(),
+                                    font_size: 12.0,
+                                    color: Color::WHITE,
+                                },
+                            ),
+                            ..default()
+                        });
+                    });
                 });
             });
         }
@@ -426,6 +641,58 @@ fn spawn_palette_ui(
             ));
 
             root.spawn((
+                ButtonBundle {
+                    style: Style {
+                        padding: UiRect::axes(Val::Px(10.0), Val::Px(8.0)),
+                        ..default()
+                    },
+                    background_color: Color::srgba(0.2, 0.3, 0.2, 0.9).into(),
+                    ..default()
+                },
+                SaveBookmarkButton,
+            ))
+            .with_children(|button| {
+                button.spawn(TextBundle {
+                    text: Text::from_section(
+                        "Bookmark current position (uses search text for name)",
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: 14.0,
+                            color: Color::WHITE,
+                        },
+                    ),
+                    ..default()
+                });
+            });
+
+            root.spawn(TextBundle {
+                text: Text::from_section(
+                    "Bookmarks:",
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: 14.0,
+                        color: Color::srgba(0.85, 0.85, 0.85, 1.0),
+                    },
+                ),
+                ..default()
+            });
+
+            root.spawn((
+                NodeBundle {
+                    style: Style {
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(4.0),
+                        max_height: Val::Px(160.0),
+                        overflow: Overflow::clip_y(),
+                        ..default()
+                    },
+                    background_color: Color::srgba(0.08, 0.08, 0.1, 0.8).into(),
+                    ..default()
+                },
+                BookmarkList,
+            ));
+
+            root.spawn((
                 NodeBundle {
                     style: Style {
                         flex_direction: FlexDirection::Column,
@@ -460,6 +727,27 @@ fn spawn_palette_ui(
 fn despawn_palette_ui(commands: &mut Commands, palette: &mut ResMut<PlacementPaletteState>) {
     if let Some(entity) = palette.root.take() {
         commands.entity(entity).despawn_recursive();
+    }
+}
+
+pub fn persist_bookmarks(mut store: ResMut<BookmarkStore>) {
+    if !store.dirty {
+        return;
+    }
+
+    if let Some(parent) = store.file_path.parent() {
+        if let Err(err) = fs::create_dir_all(parent) {
+            warn!("Failed to create bookmark directory: {err}");
+            return;
+        }
+    }
+
+    match serde_json::to_string_pretty(&store.bookmarks) {
+        Ok(serialized) => match fs::write(&store.file_path, serialized) {
+            Ok(_) => store.dirty = false,
+            Err(err) => warn!("Failed to write bookmarks: {err}"),
+        },
+        Err(err) => warn!("Failed to serialize bookmarks: {err}"),
     }
 }
 
