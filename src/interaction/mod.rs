@@ -48,6 +48,12 @@ pub struct EditMode {
     pub enabled: bool,
 }
 
+/// Resource to track delete mode while editing
+#[derive(Resource, Default)]
+pub struct DeleteMode {
+    pub enabled: bool,
+}
+
 /// State for an in-progress drag operation
 #[derive(Resource, Default)]
 pub struct DragState {
@@ -328,6 +334,7 @@ fn mark_neighbors_dirty(world: &mut VoxelWorld, pos: IVec3) {
 pub fn toggle_edit_mode(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut edit_mode: ResMut<EditMode>,
+    mut delete_mode: ResMut<DeleteMode>,
     mut drag_state: ResMut<DragState>,
     mut world: ResMut<VoxelWorld>,
 ) {
@@ -336,6 +343,7 @@ pub fn toggle_edit_mode(
 
     if keyboard.just_pressed(KeyCode::KeyM) && shift_pressed {
         edit_mode.enabled = !edit_mode.enabled;
+        delete_mode.enabled = false;
 
         if edit_mode.enabled {
             info!("Edit mode enabled - click and drag a block to move it");
@@ -350,15 +358,45 @@ pub fn toggle_edit_mode(
     }
 }
 
+/// Toggle delete mode with the Delete key when edit mode is enabled
+pub fn toggle_delete_mode(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    edit_mode: Res<EditMode>,
+    mut delete_mode: ResMut<DeleteMode>,
+    mut drag_state: ResMut<DragState>,
+    mut world: ResMut<VoxelWorld>,
+) {
+    if !edit_mode.enabled {
+        delete_mode.enabled = false;
+        return;
+    }
+
+    if keyboard.just_pressed(KeyCode::Delete) {
+        delete_mode.enabled = !delete_mode.enabled;
+
+        if delete_mode.enabled {
+            if let Some(dragged) = drag_state.dragged_block.take() {
+                world.set_voxel(dragged.original_position, dragged.block_type);
+                mark_neighbors_dirty(&mut world, dragged.original_position);
+            }
+            drag_state.rotation_degrees = 0.0;
+            info!("Delete mode enabled - left click a block to remove it");
+        } else {
+            info!("Delete mode disabled");
+        }
+    }
+}
+
 /// Begin dragging the currently targeted block when in edit mode
 pub fn start_dragging_block(
     edit_mode: Res<EditMode>,
+    delete_mode: Res<DeleteMode>,
     mouse: Res<ButtonInput<MouseButton>>,
     targeted_block: Res<TargetedBlock>,
     mut drag_state: ResMut<DragState>,
     mut world: ResMut<VoxelWorld>,
 ) {
-    if !edit_mode.enabled || !mouse.just_pressed(MouseButton::Left) {
+    if !edit_mode.enabled || delete_mode.enabled || !mouse.just_pressed(MouseButton::Left) {
         return;
     }
 
@@ -443,11 +481,12 @@ pub fn finish_dragging_block(
 /// Adjust the dragged block rotation using the scroll wheel or Q/E keys
 pub fn update_drag_rotation(
     edit_mode: Res<EditMode>,
+    delete_mode: Res<DeleteMode>,
     mut drag_state: ResMut<DragState>,
     mut mouse_wheel: EventReader<MouseWheel>,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
-    if !edit_mode.enabled {
+    if !edit_mode.enabled || delete_mode.enabled {
         return;
     }
 
@@ -475,6 +514,29 @@ pub fn update_drag_rotation(
 
         if drag_state.rotation_degrees < 0.0 {
             drag_state.rotation_degrees += 360.0;
+        }
+    }
+}
+
+/// Delete the targeted block when delete mode is active
+pub fn delete_block_in_edit_mode(
+    edit_mode: Res<EditMode>,
+    delete_mode: Res<DeleteMode>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    targeted_block: Res<TargetedBlock>,
+    mut world: ResMut<VoxelWorld>,
+) {
+    if !edit_mode.enabled || !delete_mode.enabled {
+        return;
+    }
+
+    if mouse.just_pressed(MouseButton::Left) {
+        if let (Some(pos), Some(voxel_type)) = (targeted_block.position, targeted_block.voxel_type)
+        {
+            if voxel_type != VoxelType::Bedrock {
+                world.set_voxel(pos, VoxelType::Air);
+                mark_neighbors_dirty(&mut world, pos);
+            }
         }
     }
 }
@@ -893,6 +955,7 @@ pub fn update_debug_overlay(
     targeted: Res<TargetedBlock>,
     world: Res<VoxelWorld>,
     edit_mode: Res<EditMode>,
+    delete_mode: Res<DeleteMode>,
     drag_state: Res<DragState>,
     network: Res<NetworkSession>,
     camera_query: Query<&Transform, With<crate::camera::controller::PlayerCamera>>,
@@ -1065,6 +1128,10 @@ pub fn update_debug_overlay(
                 "NO"
             }
         ));
+        text_content.push_str(&format!(
+            "\n    Delete mode: {} (Del)",
+            if delete_mode.enabled { "ON" } else { "OFF" }
+        ));
         if drag_state.dragged_block.is_some() {
             text_content.push_str(&format!(
                 "\n    Rotation: {:.0}° (scroll/Q/E)",
@@ -1111,6 +1178,7 @@ impl Plugin for InteractionPlugin {
             .init_resource::<TargetedEntity>()
             .init_resource::<HeldBlock>()
             .init_resource::<EditMode>()
+            .init_resource::<DeleteMode>()
             .init_resource::<DragState>()
             .init_resource::<DebugOverlayState>()
             .init_resource::<DebugDetailToggles>()
@@ -1121,7 +1189,9 @@ impl Plugin for InteractionPlugin {
                     update_targeted_block,
                     update_targeted_entity,
                     toggle_edit_mode,
+                    toggle_delete_mode,
                     start_dragging_block,
+                    delete_block_in_edit_mode,
                     update_drag_rotation,
                     finish_dragging_block,
                     attack_entity_system,
