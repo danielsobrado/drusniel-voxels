@@ -28,6 +28,69 @@ pub struct PauseMenuState {
     pub root_entity: Option<Entity>,
 }
 
+#[derive(Resource, Clone)]
+pub struct SettingsState {
+    pub dialog_root: Option<Entity>,
+    pub active_tab: SettingsTab,
+    pub graphics_quality: GraphicsQuality,
+    pub anti_aliasing: AntiAliasing,
+}
+
+impl Default for SettingsState {
+    fn default() -> Self {
+        Self {
+            dialog_root: None,
+            active_tab: SettingsTab::Graphics,
+            graphics_quality: GraphicsQuality::Medium,
+            anti_aliasing: AntiAliasing::Fxaa,
+        }
+    }
+}
+
+#[derive(Component, Copy, Clone)]
+enum SettingsTabButton {
+    Graphics,
+    Gameplay,
+}
+
+#[derive(Component)]
+struct SettingsDialogRoot;
+
+#[derive(Component, Copy, Clone)]
+struct GraphicsQualityOption(GraphicsQuality);
+
+#[derive(Component, Copy, Clone)]
+struct AntiAliasingOption(AntiAliasing);
+
+#[derive(Component)]
+struct CloseSettingsButton;
+
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
+enum SettingsTab {
+    Graphics,
+    Gameplay,
+}
+
+#[derive(Component)]
+struct GraphicsTabContent;
+
+#[derive(Component)]
+struct GameplayTabContent;
+
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
+enum GraphicsQuality {
+    Low,
+    Medium,
+    High,
+}
+
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
+enum AntiAliasing {
+    None,
+    Fxaa,
+    Msaa4x,
+}
+
 #[derive(Component)]
 struct PauseMenuRoot;
 
@@ -35,6 +98,7 @@ struct PauseMenuRoot;
 enum PauseMenuButton {
     Save,
     Load,
+    Settings,
     StartServer,
     Connect,
     SaveFavorite,
@@ -70,6 +134,7 @@ pub struct PauseMenuPlugin;
 impl Plugin for PauseMenuPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PauseMenuState>()
+            .init_resource::<SettingsState>()
             .init_resource::<MultiplayerFormState>()
             .init_resource::<ChatState>()
             .init_resource::<NetworkSession>()
@@ -78,10 +143,15 @@ impl Plugin for PauseMenuPlugin {
                 (
                     toggle_pause_menu,
                     handle_menu_buttons,
+                    handle_settings_buttons,
                     handle_input_interaction,
                     process_input_characters,
                     update_input_texts,
                     update_input_backgrounds,
+                    update_settings_tab_backgrounds,
+                    update_settings_content_visibility,
+                    update_settings_graphics_backgrounds,
+                    update_settings_aa_backgrounds,
                     handle_favorite_buttons,
                 ),
             );
@@ -94,13 +164,19 @@ fn toggle_pause_menu(
     asset_server: Res<AssetServer>,
     mut state: ResMut<PauseMenuState>,
     mut form_state: ResMut<MultiplayerFormState>,
+    mut settings_state: ResMut<SettingsState>,
 ) {
     if !keys.just_pressed(KeyCode::Escape) {
         return;
     }
 
     if state.open {
-        close_menu(&mut commands, &mut state, &mut form_state);
+        close_menu(
+            &mut commands,
+            &mut state,
+            &mut form_state,
+            &mut settings_state,
+        );
     } else {
         open_menu(&mut commands, &asset_server, &mut state, &form_state);
     }
@@ -155,8 +231,19 @@ fn open_menu(
                         ..default()
                     });
 
-                    spawn_button(menu, &font, "Save", PauseMenuButton::Save);
-                    spawn_button(menu, &font, "Load", PauseMenuButton::Load);
+                    menu.spawn(NodeBundle {
+                        style: Style {
+                            flex_direction: FlexDirection::Row,
+                            column_gap: Val::Px(12.0),
+                            ..default()
+                        },
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        spawn_button(row, &font, "Save", PauseMenuButton::Save);
+                        spawn_button(row, &font, "Load", PauseMenuButton::Load);
+                        spawn_button(row, &font, "Settings", PauseMenuButton::Settings);
+                    });
 
                     menu.spawn(NodeBundle {
                         style: Style {
@@ -395,14 +482,322 @@ fn spawn_button(
         });
 }
 
+fn spawn_settings_dialog(
+    commands: &mut Commands,
+    root_entity: Option<Entity>,
+    font: &Handle<Font>,
+    settings_state: SettingsState,
+) -> Entity {
+    let mut dialog_entity = commands.spawn((
+        NodeBundle {
+            style: Style {
+                width: Val::Percent(70.0),
+                height: Val::Percent(70.0),
+                padding: UiRect::all(Val::Px(20.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(12.0),
+                align_self: AlignSelf::Center,
+                justify_content: JustifyContent::FlexStart,
+                ..default()
+            },
+            background_color: Color::srgba(0.08, 0.08, 0.08, 0.95).into(),
+            ..default()
+        },
+        SettingsDialogRoot,
+    ));
+
+    dialog_entity.with_children(|dialog| {
+        dialog.spawn(TextBundle {
+            text: Text::from_section(
+                "Settings",
+                TextStyle {
+                    font: font.clone(),
+                    font_size: 28.0,
+                    color: Color::WHITE,
+                },
+            ),
+            ..default()
+        });
+
+        dialog
+            .spawn(NodeBundle {
+                style: Style {
+                    flex_direction: FlexDirection::Row,
+                    column_gap: Val::Px(10.0),
+                    ..default()
+                },
+                ..default()
+            })
+            .with_children(|tabs| {
+                spawn_settings_tab_button(tabs, font, "Graphics", SettingsTabButton::Graphics);
+                spawn_settings_tab_button(tabs, font, "Gameplay", SettingsTabButton::Gameplay);
+            });
+
+        dialog
+            .spawn(NodeBundle {
+                style: Style {
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(12.0),
+                    padding: UiRect::all(Val::Px(12.0)),
+                    ..default()
+                },
+                background_color: Color::srgba(0.12, 0.12, 0.12, 0.95).into(),
+                ..default()
+            })
+            .with_children(|content| {
+                content
+                    .spawn((
+                        NodeBundle {
+                            style: Style {
+                                flex_direction: FlexDirection::Column,
+                                row_gap: Val::Px(10.0),
+                                ..default()
+                            },
+                            visibility: if settings_state.active_tab == SettingsTab::Graphics {
+                                Visibility::Visible
+                            } else {
+                                Visibility::Hidden
+                            },
+                            ..default()
+                        },
+                        GraphicsTabContent,
+                    ))
+                    .with_children(|graphics| {
+                        graphics.spawn(TextBundle {
+                            text: Text::from_section(
+                                "Graphics Quality",
+                                TextStyle {
+                                    font: font.clone(),
+                                    font_size: 20.0,
+                                    color: Color::WHITE,
+                                },
+                            ),
+                            ..default()
+                        });
+
+                        graphics
+                            .spawn(NodeBundle {
+                                style: Style {
+                                    flex_direction: FlexDirection::Row,
+                                    column_gap: Val::Px(8.0),
+                                    ..default()
+                                },
+                                ..default()
+                            })
+                            .with_children(|row| {
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "Low",
+                                    GraphicsQualityOption(GraphicsQuality::Low),
+                                );
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "Medium",
+                                    GraphicsQualityOption(GraphicsQuality::Medium),
+                                );
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "High",
+                                    GraphicsQualityOption(GraphicsQuality::High),
+                                );
+                            });
+
+                        graphics.spawn(TextBundle {
+                            text: Text::from_section(
+                                "Anti-Aliasing",
+                                TextStyle {
+                                    font: font.clone(),
+                                    font_size: 20.0,
+                                    color: Color::WHITE,
+                                },
+                            ),
+                            ..default()
+                        });
+
+                        graphics
+                            .spawn(NodeBundle {
+                                style: Style {
+                                    flex_direction: FlexDirection::Row,
+                                    column_gap: Val::Px(8.0),
+                                    ..default()
+                                },
+                                ..default()
+                            })
+                            .with_children(|row| {
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "None",
+                                    AntiAliasingOption(AntiAliasing::None),
+                                );
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "FXAA",
+                                    AntiAliasingOption(AntiAliasing::Fxaa),
+                                );
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "MSAA 4x",
+                                    AntiAliasingOption(AntiAliasing::Msaa4x),
+                                );
+                            });
+                    });
+
+                content
+                    .spawn((
+                        NodeBundle {
+                            style: Style {
+                                flex_direction: FlexDirection::Column,
+                                row_gap: Val::Px(10.0),
+                                ..default()
+                            },
+                            visibility: if settings_state.active_tab == SettingsTab::Gameplay {
+                                Visibility::Visible
+                            } else {
+                                Visibility::Hidden
+                            },
+                            ..default()
+                        },
+                        GameplayTabContent,
+                    ))
+                    .with_children(|gameplay| {
+                        gameplay.spawn(TextBundle {
+                            text: Text::from_section(
+                                "Gameplay settings coming soon.",
+                                TextStyle {
+                                    font: font.clone(),
+                                    font_size: 18.0,
+                                    color: Color::WHITE,
+                                },
+                            ),
+                            ..default()
+                        });
+                    });
+            });
+
+        dialog
+            .spawn((
+                ButtonBundle {
+                    style: Style {
+                        width: Val::Px(120.0),
+                        padding: UiRect::all(Val::Px(10.0)),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    background_color: Color::srgba(0.25, 0.25, 0.25, 0.9).into(),
+                    ..default()
+                },
+                CloseSettingsButton,
+            ))
+            .with_children(|button| {
+                button.spawn(TextBundle {
+                    text: Text::from_section(
+                        "Close",
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: 18.0,
+                            color: Color::WHITE,
+                        },
+                    ),
+                    ..default()
+                });
+            });
+    });
+
+    let dialog_id = dialog_entity.id();
+    if let Some(root) = root_entity {
+        commands.entity(root).add_child(dialog_id);
+    }
+
+    dialog_id
+}
+
+fn spawn_settings_tab_button(
+    parent: &mut ChildBuilder,
+    font: &Handle<Font>,
+    label: &str,
+    tab: SettingsTabButton,
+) {
+    parent
+        .spawn((
+            ButtonBundle {
+                style: Style {
+                    padding: UiRect::axes(Val::Px(14.0), Val::Px(10.0)),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                background_color: Color::srgba(0.18, 0.18, 0.18, 0.9).into(),
+                ..default()
+            },
+            tab,
+        ))
+        .with_children(|button| {
+            button.spawn(TextBundle {
+                text: Text::from_section(
+                    label,
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: 18.0,
+                        color: Color::WHITE,
+                    },
+                ),
+                ..default()
+            });
+        });
+}
+
+fn spawn_graphics_option<T: Component + Copy + Send + Sync + 'static>(
+    parent: &mut ChildBuilder,
+    font: &Handle<Font>,
+    label: &str,
+    tag: T,
+) {
+    parent
+        .spawn((
+            ButtonBundle {
+                style: Style {
+                    padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                background_color: Color::srgba(0.2, 0.2, 0.2, 0.9).into(),
+                ..default()
+            },
+            tag,
+        ))
+        .with_children(|button| {
+            button.spawn(TextBundle {
+                text: Text::from_section(
+                    label,
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: 16.0,
+                        color: Color::WHITE,
+                    },
+                ),
+                ..default()
+            });
+        });
+}
+
 fn close_menu(
     commands: &mut Commands,
     state: &mut PauseMenuState,
     form_state: &mut MultiplayerFormState,
+    settings_state: &mut SettingsState,
 ) {
     if let Some(root) = state.root_entity.take() {
         commands.entity(root).despawn_recursive();
     }
+    close_settings_dialog(commands, settings_state);
     form_state.active_field = None;
     state.open = false;
 }
@@ -415,6 +810,7 @@ fn handle_menu_buttons(
     mut world: ResMut<VoxelWorld>,
     chunk_meshes: Query<Entity, With<ChunkMesh>>,
     mut state: ResMut<PauseMenuState>,
+    mut settings_state: ResMut<SettingsState>,
     mut form_state: ResMut<MultiplayerFormState>,
     mut network: ResMut<NetworkSession>,
     mut chat: ResMut<ChatState>,
@@ -520,6 +916,18 @@ fn handle_menu_buttons(
                     content: format!("Connected to {} ({} ms latency)", address, latency_ms),
                 });
             }
+            PauseMenuButton::Settings => {
+                if settings_state.dialog_root.is_none() {
+                    let font = asset_server.load("fonts/FiraSans-Bold.ttf");
+                    settings_state.active_tab = SettingsTab::Graphics;
+                    settings_state.dialog_root = Some(spawn_settings_dialog(
+                        &mut commands,
+                        state.root_entity,
+                        &font,
+                        settings_state.clone(),
+                    ));
+                }
+            }
             PauseMenuButton::SaveFavorite => {
                 if form_state.join_ip.is_empty() || form_state.join_port.is_empty() {
                     warn!("Cannot save favorite: IP or port missing");
@@ -556,13 +964,152 @@ fn handle_menu_buttons(
                 );
             }
             PauseMenuButton::Resume => {
-                close_menu(&mut commands, &mut state, &mut form_state);
+                close_menu(
+                    &mut commands,
+                    &mut state,
+                    &mut form_state,
+                    &mut settings_state,
+                );
             }
         }
 
         if !matches!(action, PauseMenuButton::Resume) {
             state.open = true;
         }
+    }
+}
+
+fn handle_settings_buttons(
+    mut commands: Commands,
+    state: Res<PauseMenuState>,
+    mut settings_state: ResMut<SettingsState>,
+    mut tab_query: Query<(&Interaction, &SettingsTabButton), (Changed<Interaction>, With<Button>)>,
+    mut quality_query: Query<
+        (&Interaction, &GraphicsQualityOption),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut aa_query: Query<(&Interaction, &AntiAliasingOption), (Changed<Interaction>, With<Button>)>,
+    mut close_query: Query<&Interaction, (Changed<Interaction>, With<CloseSettingsButton>)>,
+) {
+    if !state.open || settings_state.dialog_root.is_none() {
+        return;
+    }
+
+    for (interaction, tab) in tab_query.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            settings_state.active_tab = match tab {
+                SettingsTabButton::Graphics => SettingsTab::Graphics,
+                SettingsTabButton::Gameplay => SettingsTab::Gameplay,
+            };
+        }
+    }
+
+    for (interaction, option) in quality_query.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            settings_state.graphics_quality = option.0;
+        }
+    }
+
+    for (interaction, option) in aa_query.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            settings_state.anti_aliasing = option.0;
+        }
+    }
+
+    for interaction in close_query.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            close_settings_dialog(&mut commands, &mut settings_state);
+        }
+    }
+}
+
+fn close_settings_dialog(commands: &mut Commands, settings_state: &mut SettingsState) {
+    if let Some(entity) = settings_state.dialog_root.take() {
+        commands.entity(entity).despawn_recursive();
+    }
+}
+
+fn update_settings_tab_backgrounds(
+    settings_state: Res<SettingsState>,
+    mut query: Query<(&SettingsTabButton, &mut BackgroundColor)>,
+) {
+    if settings_state.dialog_root.is_none() {
+        return;
+    }
+
+    for (tab, mut background) in query.iter_mut() {
+        let active = match tab {
+            SettingsTabButton::Graphics => settings_state.active_tab == SettingsTab::Graphics,
+            SettingsTabButton::Gameplay => settings_state.active_tab == SettingsTab::Gameplay,
+        };
+
+        *background = if active {
+            Color::srgba(0.35, 0.35, 0.45, 0.95).into()
+        } else {
+            Color::srgba(0.18, 0.18, 0.18, 0.9).into()
+        };
+    }
+}
+
+fn update_settings_content_visibility(
+    settings_state: Res<SettingsState>,
+    mut graphics_query: Query<&mut Visibility, With<GraphicsTabContent>>,
+    mut gameplay_query: Query<&mut Visibility, With<GameplayTabContent>>,
+) {
+    if settings_state.dialog_root.is_none() {
+        return;
+    }
+
+    if let Ok(mut graphics_visibility) = graphics_query.get_single_mut() {
+        *graphics_visibility = if settings_state.active_tab == SettingsTab::Graphics {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+
+    if let Ok(mut gameplay_visibility) = gameplay_query.get_single_mut() {
+        *gameplay_visibility = if settings_state.active_tab == SettingsTab::Gameplay {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+}
+
+fn update_settings_graphics_backgrounds(
+    settings_state: Res<SettingsState>,
+    mut query: Query<(&GraphicsQualityOption, &mut BackgroundColor)>,
+) {
+    if settings_state.dialog_root.is_none() {
+        return;
+    }
+
+    for (option, mut background) in query.iter_mut() {
+        let active = settings_state.graphics_quality == option.0;
+        *background = if active {
+            Color::srgba(0.32, 0.42, 0.35, 0.95).into()
+        } else {
+            Color::srgba(0.2, 0.2, 0.2, 0.9).into()
+        };
+    }
+}
+
+fn update_settings_aa_backgrounds(
+    settings_state: Res<SettingsState>,
+    mut query: Query<(&AntiAliasingOption, &mut BackgroundColor)>,
+) {
+    if settings_state.dialog_root.is_none() {
+        return;
+    }
+
+    for (option, mut background) in query.iter_mut() {
+        let active = settings_state.anti_aliasing == option.0;
+        *background = if active {
+            Color::srgba(0.32, 0.42, 0.35, 0.95).into()
+        } else {
+            Color::srgba(0.2, 0.2, 0.2, 0.9).into()
+        };
     }
 }
 
