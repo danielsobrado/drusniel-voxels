@@ -1,7 +1,7 @@
 use crate::constants::CHUNK_SIZE_I32;
 use crate::voxel::chunk::Chunk;
-use crate::voxel::types::VoxelType;
 use crate::voxel::persistence::WorldData;
+use crate::voxel::types::VoxelType;
 use bevy::prelude::*;
 use std::collections::HashMap;
 
@@ -92,17 +92,19 @@ impl VoxelWorld {
             .map(|(pos, _)| *pos)
     }
 
+    pub fn chunk_entries_mut(&mut self) -> impl Iterator<Item = (&IVec3, &mut Chunk)> {
+        self.chunks.iter_mut()
+    }
+
     pub fn all_chunk_positions(&self) -> impl Iterator<Item = IVec3> + '_ {
         // Generate all positions within world bounds
         // This is a naive implementation, might want to just iterate loaded chunks
         // But for Phase 1 we want to generate the whole world
         let start = IVec3::ZERO;
         let end = self.world_size_chunks;
-        
+
         (start.x..end.x).flat_map(move |x| {
-            (start.y..end.y).flat_map(move |y| {
-                (start.z..end.z).map(move |z| IVec3::new(x, y, z))
-            })
+            (start.y..end.y).flat_map(move |y| (start.z..end.z).map(move |z| IVec3::new(x, y, z)))
         })
     }
 
@@ -113,9 +115,16 @@ impl VoxelWorld {
     }
 
     pub fn chunk_in_bounds(&self, chunk_pos: IVec3) -> bool {
-        chunk_pos.x >= 0 && chunk_pos.x < self.world_size_chunks.x &&
-        chunk_pos.y >= 0 && chunk_pos.y < self.world_size_chunks.y &&
-        chunk_pos.z >= 0 && chunk_pos.z < self.world_size_chunks.z
+        chunk_pos.x >= 0
+            && chunk_pos.x < self.world_size_chunks.x
+            && chunk_pos.y >= 0
+            && chunk_pos.y < self.world_size_chunks.y
+            && chunk_pos.z >= 0
+            && chunk_pos.z < self.world_size_chunks.z
+    }
+
+    pub fn world_size_chunks(&self) -> IVec3 {
+        self.world_size_chunks
     }
 
     /// Convert world to serializable data

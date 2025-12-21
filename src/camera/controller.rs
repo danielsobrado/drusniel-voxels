@@ -1,12 +1,18 @@
+use crate::interaction::palette::PlacementPaletteState;
+use crate::map::MapState;
 use crate::menu::PauseMenuState;
+use crate::rendering::capabilities::GraphicsCapabilities;
+use crate::rendering::ray_tracing::RayTracingSettings;
 use crate::voxel::types::Voxel;
 use crate::voxel::world::VoxelWorld;
+use bevy::anti_alias::taa::TemporalAntiAliasing;
 use bevy::core_pipeline::Skybox;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::input::mouse::MouseMotion;
-use bevy::pbr::{DistanceFog, FogFalloff};
+use bevy::pbr::{DistanceFog, FogFalloff, ScreenSpaceReflections};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
+use bevy::render::view::Msaa;
 use bevy::window::{CursorGrabMode, CursorOptions};
 use bevy_water::ImageReformat;
 
@@ -60,7 +66,12 @@ impl Default for PlayerCamera {
     }
 }
 
-pub fn spawn_camera(mut commands: Commands, asset_server: Res<AssetServer>) {
+pub fn spawn_camera(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    capabilities: Res<GraphicsCapabilities>,
+    ray_tracing: Res<RayTracingSettings>,
+) {
     // Load the skybox cubemap image with cubemap reformat
     let skybox_image = ImageReformat::cubemap(
         &mut commands,
@@ -68,7 +79,7 @@ pub fn spawn_camera(mut commands: Commands, asset_server: Res<AssetServer>) {
         "textures/table_mountain_2_puresky_4k_cubemap.jpg",
     );
 
-    commands.spawn((
+    let mut camera = commands.spawn((
         Camera3d::default(),
         Bloom {
             intensity: 0.06, // Subtle glow on bright highlights
@@ -92,6 +103,42 @@ pub fn spawn_camera(mut commands: Commands, asset_server: Res<AssetServer>) {
             falloff: FogFalloff::ExponentialSquared { density: 0.0015 },
         },
     ));
+
+    if capabilities.taa_supported {
+        camera.insert(TemporalAntiAliasing::default());
+        commands.insert_resource(Msaa::Off);
+    }
+
+    if ray_tracing.enabled && capabilities.ray_tracing_supported {
+        camera.insert(ScreenSpaceReflections::default());
+    }
+}
+
+pub fn update_ray_tracing_on_camera(
+    capabilities: Res<GraphicsCapabilities>,
+    settings: Res<RayTracingSettings>,
+    mut commands: Commands,
+    mut cameras: Query<(Entity, Option<&ScreenSpaceReflections>), With<PlayerCamera>>,
+) {
+    if !(settings.is_changed() || capabilities.is_changed()) {
+        return;
+    }
+
+    let should_enable = settings.enabled && capabilities.ray_tracing_supported;
+
+    for (entity, current) in cameras.iter_mut() {
+        match (should_enable, current.is_some()) {
+            (true, false) => {
+                commands
+                    .entity(entity)
+                    .insert(ScreenSpaceReflections::default());
+            }
+            (false, true) => {
+                commands.entity(entity).remove::<ScreenSpaceReflections>();
+            }
+            _ => {}
+        }
+    }
 }
 
 pub fn player_camera_system(
@@ -102,13 +149,15 @@ pub fn player_camera_system(
     mut windows: Query<(&mut Window, &mut CursorOptions)>,
     world: Res<VoxelWorld>,
     pause_menu: Res<PauseMenuState>,
+    palette: Res<PlacementPaletteState>,
+    map_state: Res<MapState>,
 ) {
     let Ok((_window, mut cursor_options)) = windows.single_mut() else {
         return;
     };
     let dt = time.delta_secs();
 
-    if pause_menu.open {
+    if pause_menu.open || palette.open || map_state.open {
         cursor_options.visible = true;
         cursor_options.grab_mode = CursorGrabMode::None;
         return;

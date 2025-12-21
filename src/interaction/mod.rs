@@ -1,8 +1,12 @@
 use crate::entity::{Health, Wolf};
+use crate::interaction::palette::{PlacementPaletteState, PlacementSelection};
+use crate::menu::PauseMenuState;
+use crate::network::NetworkSession;
 use crate::voxel::types::{Voxel, VoxelType};
 use crate::voxel::world::VoxelWorld;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::prelude::*;
+mod palette;
 
 /// Component to mark the block highlight entity
 #[derive(Component)]
@@ -29,6 +33,7 @@ impl Default for DebugOverlayState {
 pub struct DebugDetailToggles {
     pub show_vertex_corners: bool,
     pub show_texture_details: bool,
+    pub show_multiplayer: bool,
 }
 
 /// Resource tracking the currently targeted block
@@ -45,10 +50,17 @@ pub struct EditMode {
     pub enabled: bool,
 }
 
+/// Resource to track delete mode while editing
+#[derive(Resource, Default)]
+pub struct DeleteMode {
+    pub enabled: bool,
+}
+
 /// State for an in-progress drag operation
 #[derive(Resource, Default)]
 pub struct DragState {
     pub dragged_block: Option<DraggedBlock>,
+    pub rotation_degrees: f32,
 }
 
 pub struct DraggedBlock {
@@ -246,12 +258,26 @@ pub fn break_block_system(
 pub fn place_block_system(
     mouse: Res<ButtonInput<MouseButton>>,
     edit_mode: Res<EditMode>,
+    delete_mode: Res<DeleteMode>,
     targeted: Res<TargetedBlock>,
     mut world: ResMut<VoxelWorld>,
     held: Res<HeldBlock>,
     camera_query: Query<&Transform, With<crate::camera::controller::PlayerCamera>>,
+    drag_state: Res<DragState>,
+    palette: Res<PlacementPaletteState>,
 ) {
-    if edit_mode.enabled {
+    let placing_in_edit_mode = edit_mode.enabled
+        && palette
+            .active_selection
+            .as_ref()
+            .map(|selection| matches!(selection, PlacementSelection::Voxel(_)))
+            .unwrap_or(false);
+
+    if edit_mode.enabled && !placing_in_edit_mode {
+        return;
+    }
+
+    if delete_mode.enabled || drag_state.dragged_block.is_some() {
         return;
     }
 
@@ -324,6 +350,7 @@ fn mark_neighbors_dirty(world: &mut VoxelWorld, pos: IVec3) {
 pub fn toggle_edit_mode(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut edit_mode: ResMut<EditMode>,
+    mut delete_mode: ResMut<DeleteMode>,
     mut drag_state: ResMut<DragState>,
     mut world: ResMut<VoxelWorld>,
 ) {
@@ -332,6 +359,7 @@ pub fn toggle_edit_mode(
 
     if keyboard.just_pressed(KeyCode::KeyM) && shift_pressed {
         edit_mode.enabled = !edit_mode.enabled;
+        delete_mode.enabled = false;
 
         if edit_mode.enabled {
             info!("Edit mode enabled - click and drag a block to move it");
@@ -340,7 +368,37 @@ pub fn toggle_edit_mode(
                 world.set_voxel(dragged.original_position, dragged.block_type);
                 mark_neighbors_dirty(&mut world, dragged.original_position);
             }
+            drag_state.rotation_degrees = 0.0;
             info!("Edit mode disabled");
+        }
+    }
+}
+
+/// Toggle delete mode with the Delete key when edit mode is enabled
+pub fn toggle_delete_mode(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    edit_mode: Res<EditMode>,
+    mut delete_mode: ResMut<DeleteMode>,
+    mut drag_state: ResMut<DragState>,
+    mut world: ResMut<VoxelWorld>,
+) {
+    if !edit_mode.enabled {
+        delete_mode.enabled = false;
+        return;
+    }
+
+    if keyboard.just_pressed(KeyCode::Delete) {
+        delete_mode.enabled = !delete_mode.enabled;
+
+        if delete_mode.enabled {
+            if let Some(dragged) = drag_state.dragged_block.take() {
+                world.set_voxel(dragged.original_position, dragged.block_type);
+                mark_neighbors_dirty(&mut world, dragged.original_position);
+            }
+            drag_state.rotation_degrees = 0.0;
+            info!("Delete mode enabled - left click a block to remove it");
+        } else {
+            info!("Delete mode disabled");
         }
     }
 }
@@ -348,12 +406,13 @@ pub fn toggle_edit_mode(
 /// Begin dragging the currently targeted block when in edit mode
 pub fn start_dragging_block(
     edit_mode: Res<EditMode>,
+    delete_mode: Res<DeleteMode>,
     mouse: Res<ButtonInput<MouseButton>>,
     targeted_block: Res<TargetedBlock>,
     mut drag_state: ResMut<DragState>,
     mut world: ResMut<VoxelWorld>,
 ) {
-    if !edit_mode.enabled || !mouse.just_pressed(MouseButton::Left) {
+    if !edit_mode.enabled || delete_mode.enabled || !mouse.just_pressed(MouseButton::Left) {
         return;
     }
 
@@ -372,6 +431,7 @@ pub fn start_dragging_block(
             block_type: voxel_type,
             original_position: pos,
         });
+        drag_state.rotation_degrees = 0.0;
     }
 }
 
@@ -394,6 +454,11 @@ pub fn finish_dragging_block(
 
     if let (Some(block_pos), Some(normal)) = (targeted_block.position, targeted_block.normal) {
         let place_pos = block_pos + normal;
+        let Some(grounded_pos) = find_grounded_position(place_pos, &world) else {
+            world.set_voxel(dragged.original_position, dragged.block_type);
+            mark_neighbors_dirty(&mut world, dragged.original_position);
+            return;
+        };
 
         if let Ok(camera_transform) = camera_query.single() {
             let player_block = IVec3::new(
@@ -407,17 +472,17 @@ pub fn finish_dragging_block(
                 camera_transform.translation.z.floor() as i32,
             );
 
-            if place_pos == player_block || place_pos == player_feet {
+            if grounded_pos == player_block || grounded_pos == player_feet {
                 world.set_voxel(dragged.original_position, dragged.block_type);
                 mark_neighbors_dirty(&mut world, dragged.original_position);
                 return;
             }
         }
 
-        if let Some(existing) = world.get_voxel(place_pos) {
+        if let Some(existing) = world.get_voxel(grounded_pos) {
             if existing == VoxelType::Air || existing == VoxelType::Water {
-                world.set_voxel(place_pos, dragged.block_type);
-                mark_neighbors_dirty(&mut world, place_pos);
+                world.set_voxel(grounded_pos, dragged.block_type);
+                mark_neighbors_dirty(&mut world, grounded_pos);
                 return;
             }
         }
@@ -426,10 +491,111 @@ pub fn finish_dragging_block(
     // Restore to the original position if we couldn't place it elsewhere
     world.set_voxel(dragged.original_position, dragged.block_type);
     mark_neighbors_dirty(&mut world, dragged.original_position);
+    drag_state.rotation_degrees = 0.0;
+}
+
+/// Adjust the dragged block rotation using the scroll wheel or Q/E keys
+pub fn update_drag_rotation(
+    edit_mode: Res<EditMode>,
+    delete_mode: Res<DeleteMode>,
+    mut drag_state: ResMut<DragState>,
+    mut mouse_wheel: EventReader<MouseWheel>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    if !edit_mode.enabled || delete_mode.enabled {
+        return;
+    }
+
+    if drag_state.dragged_block.is_none() {
+        drag_state.rotation_degrees = 0.0;
+        return;
+    }
+
+    let mut rotation_delta = 0.0;
+
+    for wheel in mouse_wheel.read() {
+        rotation_delta += wheel.y * 15.0;
+    }
+
+    if keyboard.just_pressed(KeyCode::KeyQ) {
+        rotation_delta -= 90.0;
+    }
+
+    if keyboard.just_pressed(KeyCode::KeyE) {
+        rotation_delta += 90.0;
+    }
+
+    if rotation_delta.abs() > f32::EPSILON {
+        drag_state.rotation_degrees = (drag_state.rotation_degrees + rotation_delta) % 360.0;
+
+        if drag_state.rotation_degrees < 0.0 {
+            drag_state.rotation_degrees += 360.0;
+        }
+    }
+}
+
+/// Delete the targeted block when delete mode is active
+pub fn delete_block_in_edit_mode(
+    edit_mode: Res<EditMode>,
+    delete_mode: Res<DeleteMode>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    targeted_block: Res<TargetedBlock>,
+    mut world: ResMut<VoxelWorld>,
+) {
+    if !edit_mode.enabled || !delete_mode.enabled {
+        return;
+    }
+
+    if mouse.just_pressed(MouseButton::Left) {
+        if let (Some(pos), Some(voxel_type)) = (targeted_block.position, targeted_block.voxel_type)
+        {
+            if voxel_type != VoxelType::Bedrock {
+                world.set_voxel(pos, VoxelType::Air);
+                mark_neighbors_dirty(&mut world, pos);
+            }
+        }
+    }
+}
+
+/// Given a desired placement coordinate, drop it to the nearest supported position
+fn find_grounded_position(start: IVec3, world: &VoxelWorld) -> Option<IVec3> {
+    if !world.in_bounds(start) {
+        return None;
+    }
+
+    let mut pos = start;
+
+    // Cannot place inside a solid block
+    match world.get_voxel(pos) {
+        Some(voxel) if voxel.is_solid() => return None,
+        Some(_) => {}
+        None => return None,
+    }
+
+    // Slide downward until we find solid ground
+    loop {
+        let below = pos + IVec3::NEG_Y;
+
+        if !world.in_bounds(below) {
+            return None;
+        }
+
+        match world.get_voxel(below) {
+            Some(voxel) if voxel.is_solid() => return Some(pos),
+            Some(_) => pos = below,
+            None => return None,
+        }
+    }
 }
 
 /// System to render block highlight wireframe
-pub fn render_block_highlight(targeted: Res<TargetedBlock>, mut gizmos: Gizmos) {
+pub fn render_block_highlight(
+    targeted: Res<TargetedBlock>,
+    drag_state: Res<DragState>,
+    edit_mode: Res<EditMode>,
+    world: Res<VoxelWorld>,
+    mut gizmos: Gizmos,
+) {
     if let Some(pos) = targeted.position {
         let center = Vec3::new(pos.x as f32 + 0.5, pos.y as f32 + 0.5, pos.z as f32 + 0.5);
         let half_size = Vec3::splat(0.505); // Slightly larger than block
@@ -439,6 +605,27 @@ pub fn render_block_highlight(targeted: Res<TargetedBlock>, mut gizmos: Gizmos) 
             Transform::from_translation(center).with_scale(half_size * 2.0),
             Color::srgba(1.0, 1.0, 1.0, 0.8),
         );
+
+        // Draw a placement arrow when dragging in edit mode
+        if edit_mode.enabled && drag_state.dragged_block.is_some() {
+            if let Some(normal) = targeted.normal {
+                let desired = pos + normal;
+                if let Some(grounded) = find_grounded_position(desired, &world) {
+                    let placement_center = Vec3::new(
+                        grounded.x as f32 + 0.5,
+                        grounded.y as f32 + 0.5,
+                        grounded.z as f32 + 0.5,
+                    );
+                    let rotation = Quat::from_rotation_y(drag_state.rotation_degrees.to_radians());
+                    let forward = rotation * Vec3::Z;
+                    gizmos.arrow(
+                        placement_center,
+                        placement_center + forward * 0.75,
+                        Color::ORANGE_RED,
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -772,6 +959,10 @@ pub fn toggle_debug_details(
     if keyboard.just_pressed(KeyCode::KeyT) {
         toggles.show_texture_details = !toggles.show_texture_details;
     }
+
+    if keyboard.just_pressed(KeyCode::KeyN) {
+        toggles.show_multiplayer = !toggles.show_multiplayer;
+    }
 }
 
 /// Update debug overlay text with real-time info
@@ -780,7 +971,9 @@ pub fn update_debug_overlay(
     targeted: Res<TargetedBlock>,
     world: Res<VoxelWorld>,
     edit_mode: Res<EditMode>,
+    delete_mode: Res<DeleteMode>,
     drag_state: Res<DragState>,
+    network: Res<NetworkSession>,
     camera_query: Query<&Transform, With<crate::camera::controller::PlayerCamera>>,
     diagnostics: Res<DiagnosticsStore>,
     toggles: Res<DebugDetailToggles>,
@@ -901,6 +1094,41 @@ pub fn update_debug_overlay(
         text_content.push_str("Target: None\n");
     }
 
+    if toggles.show_multiplayer {
+        text_content.push_str("\n[Multiplayer]\n");
+        text_content.push_str(&format!(
+            "Hosting: {}\n",
+            if network.server_running { "YES" } else { "NO" }
+        ));
+        text_content.push_str(&format!(
+            "Client connected: {}\n",
+            if network.client_connected {
+                "YES"
+            } else {
+                "NO"
+            }
+        ));
+
+        if let (Some(ip), Some(port)) = (&network.connection_ip, &network.connection_port) {
+            text_content.push_str(&format!("Peer: {}:{}\n", ip, port));
+        }
+
+        let latency = network
+            .last_latency_ms
+            .map(|ms| format!("{ms} ms"))
+            .unwrap_or_else(|| "N/A".to_string());
+        text_content.push_str(&format!("Latency: {}\n", latency));
+
+        text_content.push_str(&format!(
+            "Health: {}\n",
+            if network.last_health_ok {
+                "OK"
+            } else {
+                "Unhealthy"
+            }
+        ));
+    }
+
     text_content.push_str("\n[F3] Toggle overlay");
     text_content.push_str("\n[G] Detailed log");
     text_content.push_str(&format!(
@@ -916,6 +1144,16 @@ pub fn update_debug_overlay(
                 "NO"
             }
         ));
+        text_content.push_str(&format!(
+            "\n    Delete mode: {} (Del)",
+            if delete_mode.enabled { "ON" } else { "OFF" }
+        ));
+        if drag_state.dragged_block.is_some() {
+            text_content.push_str(&format!(
+                "\n    Rotation: {:.0}° (scroll/Q/E)",
+                drag_state.rotation_degrees
+            ));
+        }
     }
     text_content.push_str(&format!(
         "\n[V] Vertex corners: {}",
@@ -928,6 +1166,14 @@ pub fn update_debug_overlay(
     text_content.push_str(&format!(
         "\n[T] Texture debug: {}",
         if toggles.show_texture_details {
+            "ON"
+        } else {
+            "OFF"
+        }
+    ));
+    text_content.push_str(&format!(
+        "\n[N] Multiplayer debug: {}",
+        if toggles.show_multiplayer {
             "ON"
         } else {
             "OFF"
@@ -948,28 +1194,45 @@ impl Plugin for InteractionPlugin {
             .init_resource::<TargetedEntity>()
             .init_resource::<HeldBlock>()
             .init_resource::<EditMode>()
+            .init_resource::<DeleteMode>()
             .init_resource::<DragState>()
             .init_resource::<DebugOverlayState>()
             .init_resource::<DebugDetailToggles>()
+            .init_resource::<palette::PaletteItems>()
+            .init_resource::<PlacementPaletteState>()
+            .init_resource::<palette::BookmarkStore>()
             .add_systems(Startup, setup_debug_overlay)
+            .add_systems(Startup, palette::load_bookmarks)
             .add_systems(
                 Update,
                 (
                     update_targeted_block,
                     update_targeted_entity,
+                    palette::initialize_palette_items,
+                    palette::toggle_palette,
+                    palette::handle_palette_input,
+                    palette::handle_bookmark_buttons,
                     toggle_edit_mode,
+                    toggle_delete_mode,
                     start_dragging_block,
+                    palette::handle_palette_item_click,
+                    delete_block_in_edit_mode,
+                    update_drag_rotation,
                     finish_dragging_block,
+                    palette::place_prop_from_palette,
+                    palette::persist_bookmarks,
                     attack_entity_system,
                     break_block_system,
                     place_block_system,
+                    palette::refresh_palette_ui,
                     render_block_highlight,
                     debug_voxel_info_system,
                     toggle_debug_overlay,
                     toggle_debug_details,
                     update_debug_overlay,
                 )
-                    .chain(),
+                    .chain()
+                    .run_if(|state: Res<PauseMenuState>| !state.open),
             );
     }
 }
