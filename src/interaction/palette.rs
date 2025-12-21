@@ -3,8 +3,13 @@ use crate::chat::ChatState;
 use crate::menu::PauseMenuState;
 use crate::props::{Prop, PropAssets, PropConfig, PropType};
 use crate::voxel::types::VoxelType;
+use bevy::hierarchy::DespawnRecursiveExt;
 use bevy::input::keyboard::ReceivedCharacter;
 use bevy::prelude::*;
+use bevy::ui::{
+    AlignItems, ButtonBundle, FlexDirection, ImageBundle, JustifyContent, NodeBundle, Overflow,
+    PositionType, Style, TextBundle, TextSection, TextStyle, UiRect, Val,
+};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -396,27 +401,27 @@ pub fn refresh_palette_ui(
                 ))
                 .with_children(|button| {
                     button.spawn(TextBundle {
-                        text: Text::from_section(
+                        text: Text::from_sections([TextSection::new(
                             &item.label,
                             TextStyle {
                                 font: font.clone(),
                                 font_size: 16.0,
                                 color: Color::WHITE,
                             },
-                        ),
+                        )]),
                         ..default()
                     });
 
                     if !item.tags.is_empty() {
                         button.spawn(TextBundle {
-                            text: Text::from_section(
+                            text: Text::from_sections([TextSection::new(
                                 format!("Tags: {}", item.tags.join(", ")),
                                 TextStyle {
                                     font: font.clone(),
                                     font_size: 12.0,
                                     color: Color::srgba(0.8, 0.8, 0.8, 0.9),
                                 },
-                            ),
+                            )]),
                             ..default()
                         });
                     }
@@ -452,14 +457,14 @@ pub fn refresh_palette_ui(
                 })
                 .with_children(|row| {
                     row.spawn(TextBundle {
-                        text: Text::from_section(
+                        text: Text::from_sections([TextSection::new(
                             name,
                             TextStyle {
                                 font: font.clone(),
                                 font_size: 12.0,
                                 color: Color::WHITE,
                             },
-                        ),
+                        )]),
                         ..default()
                     });
 
@@ -476,14 +481,14 @@ pub fn refresh_palette_ui(
                     ))
                     .with_children(|button| {
                         button.spawn(TextBundle {
-                            text: Text::from_section(
+                            text: Text::from_sections([TextSection::new(
                                 "Teleport",
                                 TextStyle {
                                     font: font.clone(),
                                     font_size: 12.0,
                                     color: Color::WHITE,
                                 },
-                            ),
+                            )]),
                             ..default()
                         });
                     });
@@ -501,14 +506,14 @@ pub fn refresh_palette_ui(
                     ))
                     .with_children(|button| {
                         button.spawn(TextBundle {
-                            text: Text::from_section(
+                            text: Text::from_sections([TextSection::new(
                                 "Delete",
                                 TextStyle {
                                     font: font.clone(),
                                     font_size: 12.0,
                                     color: Color::WHITE,
                                 },
-                            ),
+                            )]),
                             ..default()
                         });
                     });
@@ -599,27 +604,27 @@ fn spawn_palette_ui(
         ))
         .with_children(|root| {
             root.spawn(TextBundle {
-                text: Text::from_section(
+                text: Text::from_sections([TextSection::new(
                     "Placement Palette (Tab to close)",
                     TextStyle {
                         font: font.clone(),
                         font_size: 18.0,
                         color: Color::WHITE,
                     },
-                ),
+                )]),
                 ..default()
             });
 
             root.spawn((
                 TextBundle {
-                    text: Text::from_section(
+                    text: Text::from_sections([TextSection::new(
                         "Search:",
                         TextStyle {
                             font: font.clone(),
                             font_size: 14.0,
                             color: Color::srgba(0.85, 0.85, 0.85, 1.0),
                         },
-                    ),
+                    )]),
                     ..default()
                 },
                 PaletteSearchText,
@@ -627,14 +632,14 @@ fn spawn_palette_ui(
 
             root.spawn((
                 TextBundle {
-                    text: Text::from_section(
+                    text: Text::from_sections([TextSection::new(
                         "Selected: (none)",
                         TextStyle {
                             font: font.clone(),
                             font_size: 14.0,
                             color: Color::srgba(0.85, 0.85, 0.85, 1.0),
                         },
-                    ),
+                    )]),
                     ..default()
                 },
                 PaletteSelectionText,
@@ -653,27 +658,27 @@ fn spawn_palette_ui(
             ))
             .with_children(|button| {
                 button.spawn(TextBundle {
-                    text: Text::from_section(
+                    text: Text::from_sections([TextSection::new(
                         "Bookmark current position (uses search text for name)",
                         TextStyle {
                             font: font.clone(),
                             font_size: 14.0,
                             color: Color::WHITE,
                         },
-                    ),
+                    )]),
                     ..default()
                 });
             });
 
             root.spawn(TextBundle {
-                text: Text::from_section(
+                text: Text::from_sections([TextSection::new(
                     "Bookmarks:",
                     TextStyle {
                         font: font.clone(),
                         font_size: 14.0,
                         color: Color::srgba(0.85, 0.85, 0.85, 1.0),
                     },
-                ),
+                )]),
                 ..default()
             });
 
@@ -708,14 +713,14 @@ fn spawn_palette_ui(
             ));
 
             root.spawn(TextBundle {
-                text: Text::from_section(
+                text: Text::from_sections([TextSection::new(
                     "Right click while editing to place props. Voxels use the held block.",
                     TextStyle {
                         font: font.clone(),
                         font_size: 12.0,
                         color: Color::srgba(0.8, 0.8, 0.8, 0.8),
                     },
-                ),
+                )]),
                 ..default()
             });
         })
