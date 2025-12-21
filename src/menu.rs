@@ -1,7 +1,11 @@
 use crate::chat::ChatState;
 use crate::network::NetworkSession;
 use crate::voxel::{meshing::ChunkMesh, persistence, world::VoxelWorld};
-use bevy::{input::keyboard::ReceivedCharacter, prelude::*};
+use bevy::{
+    input::keyboard::ReceivedCharacter,
+    prelude::*,
+    window::{PrimaryWindow, WindowMode, WindowResolution},
+};
 use std::net::ToSocketAddrs;
 use std::time::{Duration, Instant};
 
@@ -34,6 +38,8 @@ pub struct SettingsState {
     pub active_tab: SettingsTab,
     pub graphics_quality: GraphicsQuality,
     pub anti_aliasing: AntiAliasing,
+    pub display_mode: DisplayMode,
+    pub resolution: UVec2,
 }
 
 impl Default for SettingsState {
@@ -43,6 +49,8 @@ impl Default for SettingsState {
             active_tab: SettingsTab::Graphics,
             graphics_quality: GraphicsQuality::Medium,
             anti_aliasing: AntiAliasing::Fxaa,
+            display_mode: DisplayMode::Bordered,
+            resolution: UVec2::new(1920, 1080),
         }
     }
 }
@@ -61,6 +69,16 @@ struct GraphicsQualityOption(GraphicsQuality);
 
 #[derive(Component, Copy, Clone)]
 struct AntiAliasingOption(AntiAliasing);
+
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
+enum DisplayModeOption {
+    Bordered,
+    Borderless,
+    Fullscreen,
+}
+
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
+struct ResolutionOption(UVec2);
 
 #[derive(Component)]
 struct CloseSettingsButton;
@@ -89,6 +107,13 @@ enum AntiAliasing {
     None,
     Fxaa,
     Msaa4x,
+}
+
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
+enum DisplayMode {
+    Bordered,
+    Borderless,
+    Fullscreen,
 }
 
 #[derive(Component)]
@@ -152,6 +177,8 @@ impl Plugin for PauseMenuPlugin {
                     update_settings_content_visibility,
                     update_settings_graphics_backgrounds,
                     update_settings_aa_backgrounds,
+                    update_settings_display_mode_backgrounds,
+                    update_settings_resolution_backgrounds,
                     handle_favorite_buttons,
                 ),
             );
@@ -646,6 +673,82 @@ fn spawn_settings_dialog(
                                     AntiAliasingOption(AntiAliasing::Msaa4x),
                                 );
                             });
+
+                        graphics.spawn(TextBundle {
+                            text: Text::from_section(
+                                "Display Mode",
+                                TextStyle {
+                                    font: font.clone(),
+                                    font_size: 20.0,
+                                    color: Color::WHITE,
+                                },
+                            ),
+                            ..default()
+                        });
+
+                        graphics
+                            .spawn(NodeBundle {
+                                style: Style {
+                                    flex_direction: FlexDirection::Row,
+                                    column_gap: Val::Px(8.0),
+                                    ..default()
+                                },
+                                ..default()
+                            })
+                            .with_children(|row| {
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "Bordered",
+                                    DisplayModeOption::Bordered,
+                                );
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "Borderless",
+                                    DisplayModeOption::Borderless,
+                                );
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "Fullscreen",
+                                    DisplayModeOption::Fullscreen,
+                                );
+                            });
+
+                        graphics.spawn(TextBundle {
+                            text: Text::from_section(
+                                "Resolution",
+                                TextStyle {
+                                    font: font.clone(),
+                                    font_size: 20.0,
+                                    color: Color::WHITE,
+                                },
+                            ),
+                            ..default()
+                        });
+
+                        graphics
+                            .spawn(NodeBundle {
+                                style: Style {
+                                    flex_direction: FlexDirection::Row,
+                                    column_gap: Val::Px(8.0),
+                                    row_gap: Val::Px(8.0),
+                                    flex_wrap: FlexWrap::Wrap,
+                                    ..default()
+                                },
+                                ..default()
+                            })
+                            .with_children(|row| {
+                                for (label, size) in [
+                                    ("1280x720", UVec2::new(1280, 720)),
+                                    ("1600x900", UVec2::new(1600, 900)),
+                                    ("1920x1080", UVec2::new(1920, 1080)),
+                                    ("2560x1440", UVec2::new(2560, 1440)),
+                                ] {
+                                    spawn_graphics_option(row, font, label, ResolutionOption(size));
+                                }
+                            });
                     });
 
                 content
@@ -989,7 +1092,16 @@ fn handle_settings_buttons(
         (Changed<Interaction>, With<Button>),
     >,
     mut aa_query: Query<(&Interaction, &AntiAliasingOption), (Changed<Interaction>, With<Button>)>,
+    mut display_query: Query<
+        (&Interaction, &DisplayModeOption),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut resolution_query: Query<
+        (&Interaction, &ResolutionOption),
+        (Changed<Interaction>, With<Button>),
+    >,
     mut close_query: Query<&Interaction, (Changed<Interaction>, With<CloseSettingsButton>)>,
+    mut windows: Query<&mut Window, With<PrimaryWindow>>,
 ) {
     if !state.open || settings_state.dialog_root.is_none() {
         return;
@@ -1016,11 +1128,48 @@ fn handle_settings_buttons(
         }
     }
 
+    for (interaction, option) in display_query.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            settings_state.display_mode = match option {
+                DisplayModeOption::Bordered => DisplayMode::Bordered,
+                DisplayModeOption::Borderless => DisplayMode::Borderless,
+                DisplayModeOption::Fullscreen => DisplayMode::Fullscreen,
+            };
+            apply_window_settings(&settings_state, &mut windows);
+        }
+    }
+
+    for (interaction, option) in resolution_query.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            settings_state.resolution = option.0;
+            apply_window_settings(&settings_state, &mut windows);
+        }
+    }
+
     for interaction in close_query.iter_mut() {
         if *interaction == Interaction::Pressed {
             close_settings_dialog(&mut commands, &mut settings_state);
         }
     }
+}
+
+fn apply_window_settings(
+    settings_state: &SettingsState,
+    windows: &mut Query<&mut Window, With<PrimaryWindow>>,
+) {
+    let Ok(mut window) = windows.get_single_mut() else {
+        return;
+    };
+
+    window.mode = match settings_state.display_mode {
+        DisplayMode::Bordered | DisplayMode::Borderless => WindowMode::Windowed,
+        DisplayMode::Fullscreen => WindowMode::Fullscreen,
+    };
+    window.decorations = matches!(settings_state.display_mode, DisplayMode::Bordered);
+    window.resolution = WindowResolution::new(
+        settings_state.resolution.x as f32,
+        settings_state.resolution.y as f32,
+    );
 }
 
 fn close_settings_dialog(commands: &mut Commands, settings_state: &mut SettingsState) {
@@ -1105,6 +1254,47 @@ fn update_settings_aa_backgrounds(
 
     for (option, mut background) in query.iter_mut() {
         let active = settings_state.anti_aliasing == option.0;
+        *background = if active {
+            Color::srgba(0.32, 0.42, 0.35, 0.95).into()
+        } else {
+            Color::srgba(0.2, 0.2, 0.2, 0.9).into()
+        };
+    }
+}
+
+fn update_settings_display_mode_backgrounds(
+    settings_state: Res<SettingsState>,
+    mut query: Query<(&DisplayModeOption, &mut BackgroundColor)>,
+) {
+    if settings_state.dialog_root.is_none() {
+        return;
+    }
+
+    for (option, mut background) in query.iter_mut() {
+        let active = match option {
+            DisplayModeOption::Bordered => settings_state.display_mode == DisplayMode::Bordered,
+            DisplayModeOption::Borderless => settings_state.display_mode == DisplayMode::Borderless,
+            DisplayModeOption::Fullscreen => settings_state.display_mode == DisplayMode::Fullscreen,
+        };
+
+        *background = if active {
+            Color::srgba(0.32, 0.42, 0.35, 0.95).into()
+        } else {
+            Color::srgba(0.2, 0.2, 0.2, 0.9).into()
+        };
+    }
+}
+
+fn update_settings_resolution_backgrounds(
+    settings_state: Res<SettingsState>,
+    mut query: Query<(&ResolutionOption, &mut BackgroundColor)>,
+) {
+    if settings_state.dialog_root.is_none() {
+        return;
+    }
+
+    for (option, mut background) in query.iter_mut() {
+        let active = settings_state.resolution == option.0;
         *background = if active {
             Color::srgba(0.32, 0.42, 0.35, 0.95).into()
         } else {
