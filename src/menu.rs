@@ -1,6 +1,7 @@
 use crate::voxel::{meshing::ChunkMesh, persistence, world::VoxelWorld};
 use bevy::prelude::*;
 
+
 #[derive(Resource, Default)]
 pub struct PauseMenuState {
     pub open: bool,
@@ -48,48 +49,113 @@ fn open_menu(commands: &mut Commands, asset_server: &Res<AssetServer>, state: &m
 
     let root = commands
         .spawn((
-            NodeBundle {
-                style: Style {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                background_color: Color::srgba(0.0, 0.0, 0.0, 0.5).into(),
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
                 ..default()
             },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
             PauseMenuRoot,
         ))
         .with_children(|parent| {
             parent
-                .spawn(NodeBundle {
-                    style: Style {
+                .spawn((
+                    Node {
                         flex_direction: FlexDirection::Column,
                         align_items: AlignItems::Center,
                         row_gap: Val::Px(12.0),
                         padding: UiRect::all(Val::Px(20.0)),
                         ..default()
                     },
-                    background_color: Color::srgba(0.1, 0.1, 0.1, 0.8).into(),
-                    ..default()
-                })
+                    BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.8)),
+                ))
                 .with_children(|menu| {
-                    menu.spawn(TextBundle {
-                        text: Text::from_section(
-                            "Paused",
-                            TextStyle {
+                    menu.spawn((
+                        Text::new("Paused"),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 30.0,
+                            ..default()
+                        },
+                        TextColor(Color::WHITE),
+                    ));
+
+                    // Save Button
+                    menu.spawn((
+                        Button,
+                        Node {
+                            width: Val::Px(160.0),
+                            padding: UiRect::all(Val::Px(12.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.25, 0.25, 0.25, 0.9)),
+                        PauseMenuButton::Save,
+                    ))
+                    .with_children(|button| {
+                        button.spawn((
+                            Text::new("Save"),
+                            TextFont {
                                 font: font.clone(),
-                                font_size: 30.0,
-                                color: Color::WHITE,
+                                font_size: 20.0,
+                                ..default()
                             },
-                        ),
-                        ..default()
+                            TextColor(Color::WHITE),
+                        ));
                     });
 
-                    spawn_button(menu, &font, "Save", PauseMenuButton::Save);
-                    spawn_button(menu, &font, "Load", PauseMenuButton::Load);
-                    spawn_button(menu, &font, "Resume", PauseMenuButton::Resume);
+                    // Load Button
+                    menu.spawn((
+                        Button,
+                        Node {
+                            width: Val::Px(160.0),
+                            padding: UiRect::all(Val::Px(12.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.25, 0.25, 0.25, 0.9)),
+                        PauseMenuButton::Load,
+                    ))
+                    .with_children(|button| {
+                        button.spawn((
+                            Text::new("Load"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 20.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
+                    });
+
+                    // Resume Button
+                    menu.spawn((
+                        Button,
+                        Node {
+                            width: Val::Px(160.0),
+                            padding: UiRect::all(Val::Px(12.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.25, 0.25, 0.25, 0.9)),
+                        PauseMenuButton::Resume,
+                    ))
+                    .with_children(|button| {
+                        button.spawn((
+                            Text::new("Resume"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 20.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
+                    });
                 });
         })
         .id();
@@ -98,45 +164,11 @@ fn open_menu(commands: &mut Commands, asset_server: &Res<AssetServer>, state: &m
     state.open = true;
 }
 
-fn spawn_button(
-    parent: &mut ChildBuilder,
-    font: &Handle<Font>,
-    label: &str,
-    action: PauseMenuButton,
-) {
-    parent
-        .spawn((
-            ButtonBundle {
-                style: Style {
-                    width: Val::Px(160.0),
-                    padding: UiRect::all(Val::Px(12.0)),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                background_color: Color::srgba(0.25, 0.25, 0.25, 0.9).into(),
-                ..default()
-            },
-            action,
-        ))
-        .with_children(|button| {
-            button.spawn(TextBundle {
-                text: Text::from_section(
-                    label,
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 20.0,
-                        color: Color::WHITE,
-                    },
-                ),
-                ..default()
-            });
-        });
-}
+
 
 fn close_menu(commands: &mut Commands, state: &mut PauseMenuState) {
     if let Some(root) = state.root_entity.take() {
-        commands.entity(root).despawn_recursive();
+        commands.entity(root).despawn();
     }
     state.open = false;
 }
@@ -163,7 +195,7 @@ fn handle_menu_buttons(
             },
             PauseMenuButton::Load => {
                 for entity in chunk_meshes.iter() {
-                    commands.entity(entity).despawn_recursive();
+                    commands.entity(entity).despawn();
                 }
 
                 match persistence::load_world() {
