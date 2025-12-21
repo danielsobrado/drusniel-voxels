@@ -2,13 +2,14 @@ use crate::interaction::palette::PlacementPaletteState;
 use crate::map::MapState;
 use crate::menu::PauseMenuState;
 use crate::rendering::capabilities::GraphicsCapabilities;
+use crate::rendering::ray_tracing::RayTracingSettings;
 use crate::voxel::types::Voxel;
 use crate::voxel::world::VoxelWorld;
 use bevy::anti_alias::taa::TemporalAntiAliasing;
 use bevy::core_pipeline::Skybox;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::input::mouse::MouseMotion;
-use bevy::pbr::{DistanceFog, FogFalloff};
+use bevy::pbr::{DistanceFog, FogFalloff, ScreenSpaceReflections};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::render::view::Msaa;
@@ -69,6 +70,7 @@ pub fn spawn_camera(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     capabilities: Res<GraphicsCapabilities>,
+    ray_tracing: Res<RayTracingSettings>,
 ) {
     // Load the skybox cubemap image with cubemap reformat
     let skybox_image = ImageReformat::cubemap(
@@ -105,6 +107,37 @@ pub fn spawn_camera(
     if capabilities.taa_supported {
         camera.insert(TemporalAntiAliasing::default());
         commands.insert_resource(Msaa::Off);
+    }
+
+    if ray_tracing.enabled && capabilities.ray_tracing_supported {
+        camera.insert(ScreenSpaceReflections::default());
+    }
+}
+
+pub fn update_ray_tracing_on_camera(
+    capabilities: Res<GraphicsCapabilities>,
+    settings: Res<RayTracingSettings>,
+    mut commands: Commands,
+    mut cameras: Query<(Entity, Option<&ScreenSpaceReflections>), With<PlayerCamera>>,
+) {
+    if !(settings.is_changed() || capabilities.is_changed()) {
+        return;
+    }
+
+    let should_enable = settings.enabled && capabilities.ray_tracing_supported;
+
+    for (entity, current) in cameras.iter_mut() {
+        match (should_enable, current.is_some()) {
+            (true, false) => {
+                commands
+                    .entity(entity)
+                    .insert(ScreenSpaceReflections::default());
+            }
+            (false, true) => {
+                commands.entity(entity).remove::<ScreenSpaceReflections>();
+            }
+            _ => {}
+        }
     }
 }
 

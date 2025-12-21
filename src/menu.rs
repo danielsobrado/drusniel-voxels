@@ -1,5 +1,6 @@
 use crate::chat::ChatState;
 use crate::network::NetworkSession;
+use crate::rendering::{capabilities::GraphicsCapabilities, ray_tracing::RayTracingSettings};
 use crate::voxel::{meshing::ChunkMesh, persistence, world::VoxelWorld};
 use bevy::{
     input::keyboard::ReceivedCharacter,
@@ -38,6 +39,7 @@ pub struct SettingsState {
     pub active_tab: SettingsTab,
     pub graphics_quality: GraphicsQuality,
     pub anti_aliasing: AntiAliasing,
+    pub ray_tracing: bool,
     pub display_mode: DisplayMode,
     pub resolution: UVec2,
 }
@@ -49,6 +51,7 @@ impl Default for SettingsState {
             active_tab: SettingsTab::Graphics,
             graphics_quality: GraphicsQuality::Medium,
             anti_aliasing: AntiAliasing::Fxaa,
+            ray_tracing: false,
             display_mode: DisplayMode::Bordered,
             resolution: UVec2::new(1920, 1080),
         }
@@ -69,6 +72,9 @@ struct GraphicsQualityOption(GraphicsQuality);
 
 #[derive(Component, Copy, Clone)]
 struct AntiAliasingOption(AntiAliasing);
+
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
+struct RayTracingOption(bool);
 
 #[derive(Component, Copy, Clone, Eq, PartialEq)]
 enum DisplayModeOption {
@@ -177,6 +183,7 @@ impl Plugin for PauseMenuPlugin {
                     update_settings_content_visibility,
                     update_settings_graphics_backgrounds,
                     update_settings_aa_backgrounds,
+                    update_settings_ray_tracing_backgrounds,
                     update_settings_display_mode_backgrounds,
                     update_settings_resolution_backgrounds,
                     handle_favorite_buttons,
@@ -514,6 +521,7 @@ fn spawn_settings_dialog(
     root_entity: Option<Entity>,
     font: &Handle<Font>,
     settings_state: SettingsState,
+    ray_tracing_supported: bool,
 ) -> Entity {
     let mut dialog_entity = commands.spawn((
         NodeBundle {
@@ -672,6 +680,46 @@ fn spawn_settings_dialog(
                                     "MSAA 4x",
                                     AntiAliasingOption(AntiAliasing::Msaa4x),
                                 );
+                            });
+
+                        graphics.spawn(TextBundle {
+                            text: Text::from_section(
+                                "Ray Tracing",
+                                TextStyle {
+                                    font: font.clone(),
+                                    font_size: 20.0,
+                                    color: Color::WHITE,
+                                },
+                            ),
+                            ..default()
+                        });
+
+                        if !ray_tracing_supported {
+                            graphics.spawn(TextBundle {
+                                text: Text::from_section(
+                                    "Ray tracing requires a compatible GPU.",
+                                    TextStyle {
+                                        font: font.clone(),
+                                        font_size: 14.0,
+                                        color: Color::srgba(0.8, 0.4, 0.4, 1.0),
+                                    },
+                                ),
+                                ..default()
+                            });
+                        }
+
+                        graphics
+                            .spawn(NodeBundle {
+                                style: Style {
+                                    flex_direction: FlexDirection::Row,
+                                    column_gap: Val::Px(8.0),
+                                    ..default()
+                                },
+                                ..default()
+                            })
+                            .with_children(|row| {
+                                spawn_graphics_option(row, font, "Off", RayTracingOption(false));
+                                spawn_graphics_option(row, font, "On", RayTracingOption(true));
                             });
 
                         graphics.spawn(TextBundle {
@@ -920,6 +968,7 @@ fn handle_menu_buttons(
     favorites_list: Query<Entity, With<FavoritesList>>,
     asset_server: Res<AssetServer>,
     mut commands: Commands,
+    capabilities: Res<GraphicsCapabilities>,
 ) {
     for (interaction, action) in interaction_query.iter_mut() {
         if *interaction != Interaction::Pressed {
@@ -1028,6 +1077,7 @@ fn handle_menu_buttons(
                         state.root_entity,
                         &font,
                         settings_state.clone(),
+                        capabilities.ray_tracing_supported,
                     ));
                 }
             }
@@ -1086,12 +1136,18 @@ fn handle_settings_buttons(
     mut commands: Commands,
     state: Res<PauseMenuState>,
     mut settings_state: ResMut<SettingsState>,
+    mut ray_tracing_settings: ResMut<RayTracingSettings>,
+    capabilities: Res<GraphicsCapabilities>,
     mut tab_query: Query<(&Interaction, &SettingsTabButton), (Changed<Interaction>, With<Button>)>,
     mut quality_query: Query<
         (&Interaction, &GraphicsQualityOption),
         (Changed<Interaction>, With<Button>),
     >,
     mut aa_query: Query<(&Interaction, &AntiAliasingOption), (Changed<Interaction>, With<Button>)>,
+    mut ray_tracing_query: Query<
+        (&Interaction, &RayTracingOption),
+        (Changed<Interaction>, With<Button>),
+    >,
     mut display_query: Query<
         (&Interaction, &DisplayModeOption),
         (Changed<Interaction>, With<Button>),
@@ -1125,6 +1181,18 @@ fn handle_settings_buttons(
     for (interaction, option) in aa_query.iter_mut() {
         if *interaction == Interaction::Pressed {
             settings_state.anti_aliasing = option.0;
+        }
+    }
+
+    for (interaction, option) in ray_tracing_query.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            if option.0 && !capabilities.ray_tracing_supported {
+                warn!("Ray tracing is not supported on this GPU");
+                continue;
+            }
+
+            settings_state.ray_tracing = option.0;
+            ray_tracing_settings.enabled = option.0;
         }
     }
 
@@ -1254,6 +1322,24 @@ fn update_settings_aa_backgrounds(
 
     for (option, mut background) in query.iter_mut() {
         let active = settings_state.anti_aliasing == option.0;
+        *background = if active {
+            Color::srgba(0.32, 0.42, 0.35, 0.95).into()
+        } else {
+            Color::srgba(0.2, 0.2, 0.2, 0.9).into()
+        };
+    }
+}
+
+fn update_settings_ray_tracing_backgrounds(
+    settings_state: Res<SettingsState>,
+    mut query: Query<(&RayTracingOption, &mut BackgroundColor)>,
+) {
+    if settings_state.dialog_root.is_none() {
+        return;
+    }
+
+    for (option, mut background) in query.iter_mut() {
+        let active = settings_state.ray_tracing == option.0;
         *background = if active {
             Color::srgba(0.32, 0.42, 0.35, 0.95).into()
         } else {
