@@ -69,7 +69,10 @@ impl Plugin for AtmospherePlugin {
                 ..default()
             })
             .add_plugins((WaterPlugin, ImageUtilsPlugin))
-            .add_systems(Startup, setup_atmosphere)
+            .add_systems(
+                Startup,
+                (setup_atmosphere, seed_atmosphere.after(setup_atmosphere)),
+            )
             .add_systems(Update, animate_atmosphere);
     }
 }
@@ -89,6 +92,24 @@ fn setup_atmosphere(mut commands: Commands) {
     ));
 }
 
+fn seed_atmosphere(
+    settings: Res<AtmosphereSettings>,
+    mut sun_query: Query<(&mut Transform, &mut DirectionalLight), With<Sun>>,
+    mut ambient: ResMut<AmbientLight>,
+    mut clear_color: ResMut<ClearColor>,
+    mut fog_query: Query<&mut DistanceFog>,
+) {
+    if let Some(sample) = compute_atmosphere(&settings) {
+        apply_atmosphere_sample(
+            sample,
+            &mut sun_query,
+            &mut ambient,
+            &mut clear_color,
+            &mut fog_query,
+        );
+    }
+}
+
 fn animate_atmosphere(
     time: Res<Time>,
     mut settings: ResMut<AtmosphereSettings>,
@@ -99,6 +120,30 @@ fn animate_atmosphere(
 ) {
     // Advance time
     settings.time = (settings.time + time.delta_secs() * settings.time_scale) % settings.day_length;
+    if let Some(sample) = compute_atmosphere(&settings) {
+        apply_atmosphere_sample(
+            sample,
+            &mut sun_query,
+            &mut ambient,
+            &mut clear_color,
+            &mut fog_query,
+        );
+    }
+}
+
+struct AtmosphereSample {
+    sun_dir: Vec3,
+    sun_color: Color,
+    sun_illuminance: f32,
+    ambient_color: Color,
+    ambient_brightness: f32,
+    sky_color: Color,
+    fog_color: Color,
+    fog_density: f32,
+    fog_light_color: Color,
+}
+
+fn compute_atmosphere(settings: &AtmosphereSettings) -> Option<AtmosphereSample> {
     let phase = settings.time / settings.day_length; // 0..1
 
     // Sun position: overhead at noon, below horizon at night for smooth twilight
@@ -106,6 +151,10 @@ fn animate_atmosphere(
     let altitude = theta.sin(); // 1 at noon, -1 at midnight
     let azimuth = theta.cos(); // horizontal movement
     let sun_dir = Vec3::new(azimuth * 0.45, altitude, 0.35).normalize_or_zero();
+
+    if sun_dir == Vec3::ZERO {
+        return None;
+    }
 
     // Atmospheric scattering parameters
     let cos_theta = sun_dir.dot(Vec3::Y).clamp(-1.0, 1.0);
@@ -143,30 +192,49 @@ fn animate_atmosphere(
         .lerp(Vec3::new(0.25, 0.36, 0.50), daylight)
         .lerp(Vec3::new(0.22, 0.24, 0.30), horizon_warmth * 0.5);
 
-    // Update sun
-    if let Ok((mut transform, mut light)) = sun_query.single_mut() {
-        transform.look_to(sun_dir, Vec3::Y);
-        light.illuminance = sun_strength + moon_strength;
-        light.color = Color::srgba(sun_tint.x, sun_tint.y, sun_tint.z, 1.0);
-    }
-
-    // Update ambient and sky tint
-    ambient.brightness = ambient_strength;
-    ambient.color = Color::srgba(ambient_tint.x, ambient_tint.y, ambient_tint.z, 1.0);
-    clear_color.0 = Color::srgba(sky_color.x, sky_color.y, sky_color.z, 1.0);
-
-    // Update fog to match the current atmospheric mix
+    // Fog color and density
     let fog_color = night_sky
         .lerp(zenith_day * 1.1, daylight)
         .lerp(horizon_twilight, horizon_warmth)
         * settings.exposure;
     let fog_density = lerp(settings.fog_density.y, settings.fog_density.x, daylight)
         * (1.0 + horizon_warmth * 0.75);
+
+    Some(AtmosphereSample {
+        sun_dir,
+        sun_color: Color::srgba(sun_tint.x, sun_tint.y, sun_tint.z, 1.0),
+        sun_illuminance: sun_strength + moon_strength,
+        ambient_color: Color::srgba(ambient_tint.x, ambient_tint.y, ambient_tint.z, 1.0),
+        ambient_brightness: ambient_strength,
+        sky_color: Color::srgba(sky_color.x, sky_color.y, sky_color.z, 1.0),
+        fog_color: Color::srgba(fog_color.x, fog_color.y, fog_color.z, 1.0),
+        fog_density: fog_density.clamp(0.0003, 0.015),
+        fog_light_color: Color::srgba(sun_tint.x, sun_tint.y, sun_tint.z, 1.0),
+    })
+}
+
+fn apply_atmosphere_sample(
+    sample: AtmosphereSample,
+    sun_query: &mut Query<(&mut Transform, &mut DirectionalLight), With<Sun>>,
+    ambient: &mut ResMut<AmbientLight>,
+    clear_color: &mut ResMut<ClearColor>,
+    fog_query: &mut Query<&mut DistanceFog>,
+) {
+    if let Ok((mut transform, mut light)) = sun_query.single_mut() {
+        transform.look_to(sample.sun_dir, Vec3::Y);
+        light.illuminance = sample.sun_illuminance;
+        light.color = sample.sun_color;
+    }
+
+    ambient.brightness = sample.ambient_brightness;
+    ambient.color = sample.ambient_color;
+    clear_color.0 = sample.sky_color;
+
     for mut fog in fog_query.iter_mut() {
-        fog.color = Color::srgba(fog_color.x, fog_color.y, fog_color.z, 1.0);
-        fog.directional_light_color = Color::srgba(sun_tint.x, sun_tint.y, sun_tint.z, 1.0);
+        fog.color = sample.fog_color;
+        fog.directional_light_color = sample.fog_light_color;
         fog.falloff = FogFalloff::ExponentialSquared {
-            density: fog_density.clamp(0.0003, 0.015),
+            density: sample.fog_density,
         };
     }
 }
