@@ -5,6 +5,7 @@ use voxel_builder::chat::ChatPlugin;
 use voxel_builder::entity::EntityPlugin;
 use voxel_builder::environment::AtmospherePlugin;
 use voxel_builder::interaction::InteractionPlugin;
+use voxel_builder::map::MapPlugin;
 use voxel_builder::menu::PauseMenuPlugin;
 use voxel_builder::props::PropsPlugin;
 use voxel_builder::rendering::plugin::RenderingPlugin;
@@ -21,6 +22,7 @@ fn main() {
         .add_plugins(CameraPlugin)
         .add_plugins(InteractionPlugin)
         .add_plugins(PickaxePlugin)
+        .add_plugins(MapPlugin)
         .add_plugins(VegetationPlugin)
         .add_plugins(ChatPlugin)
         .add_plugins(PauseMenuPlugin)

@@ -1,4 +1,5 @@
 use crate::interaction::palette::PlacementPaletteState;
+use crate::map::MapState;
 use crate::menu::PauseMenuState;
 use crate::rendering::capabilities::GraphicsCapabilities;
 use crate::voxel::types::Voxel;
@@ -116,13 +117,14 @@ pub fn player_camera_system(
     world: Res<VoxelWorld>,
     pause_menu: Res<PauseMenuState>,
     palette: Res<PlacementPaletteState>,
+    map_state: Res<MapState>,
 ) {
     let Ok((_window, mut cursor_options)) = windows.single_mut() else {
         return;
     };
     let dt = time.delta_secs();
 
-    if pause_menu.open || palette.open {
+    if pause_menu.open || palette.open || map_state.open {
         cursor_options.visible = true;
         cursor_options.grab_mode = CursorGrabMode::None;
         return;

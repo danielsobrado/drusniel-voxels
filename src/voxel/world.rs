@@ -123,6 +123,10 @@ impl VoxelWorld {
             && chunk_pos.z < self.world_size_chunks.z
     }
 
+    pub fn world_size_chunks(&self) -> IVec3 {
+        self.world_size_chunks
+    }
+
     /// Convert world to serializable data
     pub fn to_data(&self) -> WorldData {
         WorldData {
