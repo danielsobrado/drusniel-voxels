@@ -1,9 +1,14 @@
 use crate::camera::controller::PlayerCamera;
 use crate::menu::PauseMenuState;
 use crate::voxel::world::VoxelWorld;
+use bevy::hierarchy::DespawnRecursiveExt;
 use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::ui::{
+    AlignItems, FlexDirection, JustifyContent, NodeBundle, PositionType, Style, TextBundle,
+    TextSection, TextStyle, UiRect, Val,
+};
 
 pub struct MapPlugin;
 

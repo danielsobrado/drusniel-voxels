@@ -5,6 +5,7 @@ use crate::network::NetworkSession;
 use crate::voxel::types::{Voxel, VoxelType};
 use crate::voxel::world::VoxelWorld;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
+use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 mod palette;
 
@@ -511,7 +512,7 @@ pub fn update_drag_rotation(
         return;
     }
 
-    let mut rotation_delta = 0.0;
+    let mut rotation_delta: f32 = 0.0;
 
     for wheel in mouse_wheel.read() {
         rotation_delta += wheel.y * 15.0;
@@ -621,7 +622,7 @@ pub fn render_block_highlight(
                     gizmos.arrow(
                         placement_center,
                         placement_center + forward * 0.75,
-                        Color::ORANGE_RED,
+                        Color::srgb(1.0, 0.27, 0.0),
                     );
                 }
             }
@@ -1231,7 +1232,6 @@ impl Plugin for InteractionPlugin {
                     toggle_debug_details,
                     update_debug_overlay,
                 )
-                    .chain()
                     .run_if(|state: Res<PauseMenuState>| !state.open),
             );
     }

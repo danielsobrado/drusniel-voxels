@@ -4,8 +4,13 @@ use crate::rendering::{capabilities::GraphicsCapabilities, ray_tracing::RayTraci
 use crate::voxel::{meshing::ChunkMesh, persistence, world::VoxelWorld};
 use bevy::{
     input::keyboard::ReceivedCharacter,
+    hierarchy::DespawnRecursiveExt,
     prelude::*,
     window::{PrimaryWindow, WindowMode, WindowResolution},
+};
+use bevy::ui::{
+    AlignItems, AlignSelf, ButtonBundle, FlexDirection, JustifyContent, NodeBundle, PositionType,
+    Style, TextBundle, TextSection, TextStyle, UiRect, Val,
 };
 use std::net::ToSocketAddrs;
 use std::time::{Duration, Instant};
@@ -312,14 +317,14 @@ fn open_menu(
                     })
                     .with_children(|section| {
                         section.spawn(TextBundle {
-                            text: Text::from_section(
+                            text: Text::from_sections([TextSection::new(
                                 "Host Game",
                                 TextStyle {
                                     font: font.clone(),
                                     font_size: 22.0,
                                     color: Color::WHITE,
                                 },
-                            ),
+                            )]),
                             ..default()
                         });
 
@@ -346,14 +351,14 @@ fn open_menu(
                     })
                     .with_children(|section| {
                         section.spawn(TextBundle {
-                            text: Text::from_section(
+                            text: Text::from_sections([TextSection::new(
                                 "Join Game",
                                 TextStyle {
                                     font: font.clone(),
                                     font_size: 22.0,
                                     color: Color::WHITE,
                                 },
-                            ),
+                            )]),
                             ..default()
                         });
 
@@ -412,14 +417,14 @@ fn open_menu(
                             .insert(FavoritesList)
                             .with_children(|favorites| {
                                 favorites.spawn(TextBundle {
-                                    text: Text::from_section(
+                                    text: Text::from_sections([TextSection::new(
                                         "Favorite Servers",
                                         TextStyle {
                                             font: font.clone(),
                                             font_size: 18.0,
                                             color: Color::WHITE,
                                         },
-                                    ),
+                                    )]),
                                     ..default()
                                 });
 
@@ -458,14 +463,14 @@ fn spawn_labeled_input(
         })
         .with_children(|column| {
             column.spawn(TextBundle {
-                text: Text::from_section(
+                text: Text::from_sections([TextSection::new(
                     label,
                     TextStyle {
                         font: font.clone(),
                         font_size: 16.0,
                         color: Color::WHITE,
                     },
-                ),
+                )]),
                 ..default()
             });
 
@@ -487,14 +492,14 @@ fn spawn_labeled_input(
                 .with_children(|input| {
                     input.spawn((
                         TextBundle {
-                            text: Text::from_section(
+                            text: Text::from_sections([TextSection::new(
                                 placeholder,
                                 TextStyle {
                                     font: font.clone(),
                                     font_size: 16.0,
                                     color: Color::srgba(0.8, 0.8, 0.8, 0.9),
                                 },
-                            ),
+                            )]),
                             ..default()
                         },
                         InputText { field },
@@ -526,14 +531,14 @@ fn spawn_button(
         ))
         .with_children(|button| {
             button.spawn(TextBundle {
-                text: Text::from_section(
+                text: Text::from_sections([TextSection::new(
                     label,
                     TextStyle {
                         font: font.clone(),
                         font_size: 20.0,
                         color: Color::WHITE,
                     },
-                ),
+                )]),
                 ..default()
             });
         });
@@ -567,14 +572,14 @@ fn spawn_settings_dialog(
 
     dialog_entity.with_children(|dialog| {
         dialog.spawn(TextBundle {
-            text: Text::from_section(
+            text: Text::from_sections([TextSection::new(
                 "Settings",
                 TextStyle {
                     font: font.clone(),
                     font_size: 28.0,
                     color: Color::WHITE,
                 },
-            ),
+            )]),
             ..default()
         });
 
@@ -623,14 +628,14 @@ fn spawn_settings_dialog(
                     ))
                     .with_children(|graphics| {
                         graphics.spawn(TextBundle {
-                            text: Text::from_section(
+                            text: Text::from_sections([TextSection::new(
                                 "Graphics Quality",
                                 TextStyle {
                                     font: font.clone(),
                                     font_size: 20.0,
                                     color: Color::WHITE,
                                 },
-                            ),
+                            )]),
                             ..default()
                         });
 
@@ -665,14 +670,14 @@ fn spawn_settings_dialog(
                             });
 
                         graphics.spawn(TextBundle {
-                            text: Text::from_section(
+                            text: Text::from_sections([TextSection::new(
                                 "Anti-Aliasing",
                                 TextStyle {
                                     font: font.clone(),
                                     font_size: 20.0,
                                     color: Color::WHITE,
                                 },
-                            ),
+                            )]),
                             ..default()
                         });
 
@@ -707,27 +712,27 @@ fn spawn_settings_dialog(
                             });
 
                         graphics.spawn(TextBundle {
-                            text: Text::from_section(
+                            text: Text::from_sections([TextSection::new(
                                 "Ray Tracing",
                                 TextStyle {
                                     font: font.clone(),
                                     font_size: 20.0,
                                     color: Color::WHITE,
                                 },
-                            ),
+                            )]),
                             ..default()
                         });
 
                         if !ray_tracing_supported {
                             graphics.spawn(TextBundle {
-                                text: Text::from_section(
+                                text: Text::from_sections([TextSection::new(
                                     "Ray tracing requires a compatible GPU.",
                                     TextStyle {
                                         font: font.clone(),
                                         font_size: 14.0,
                                         color: Color::srgba(0.8, 0.4, 0.4, 1.0),
                                     },
-                                ),
+                                )]),
                                 ..default()
                             });
                         }
@@ -747,14 +752,14 @@ fn spawn_settings_dialog(
                             });
 
                         graphics.spawn(TextBundle {
-                            text: Text::from_section(
+                            text: Text::from_sections([TextSection::new(
                                 "Display Mode",
                                 TextStyle {
                                     font: font.clone(),
                                     font_size: 20.0,
                                     color: Color::WHITE,
                                 },
-                            ),
+                            )]),
                             ..default()
                         });
 
@@ -789,14 +794,14 @@ fn spawn_settings_dialog(
                             });
 
                         graphics.spawn(TextBundle {
-                            text: Text::from_section(
+                            text: Text::from_sections([TextSection::new(
                                 "Resolution",
                                 TextStyle {
                                     font: font.clone(),
                                     font_size: 20.0,
                                     color: Color::WHITE,
                                 },
-                            ),
+                            )]),
                             ..default()
                         });
 
@@ -842,14 +847,14 @@ fn spawn_settings_dialog(
                     ))
                     .with_children(|gameplay| {
                         gameplay.spawn(TextBundle {
-                            text: Text::from_section(
+                            text: Text::from_sections([TextSection::new(
                                 "Gameplay settings coming soon.",
                                 TextStyle {
                                     font: font.clone(),
                                     font_size: 18.0,
                                     color: Color::WHITE,
                                 },
-                            ),
+                            )]),
                             ..default()
                         });
                     });
@@ -872,14 +877,14 @@ fn spawn_settings_dialog(
             ))
             .with_children(|button| {
                 button.spawn(TextBundle {
-                    text: Text::from_section(
+                    text: Text::from_sections([TextSection::new(
                         "Close",
                         TextStyle {
                             font: font.clone(),
                             font_size: 18.0,
                             color: Color::WHITE,
                         },
-                    ),
+                    )]),
                     ..default()
                 });
             });
@@ -915,14 +920,14 @@ fn spawn_settings_tab_button(
         ))
         .with_children(|button| {
             button.spawn(TextBundle {
-                text: Text::from_section(
+                text: Text::from_sections([TextSection::new(
                     label,
                     TextStyle {
                         font: font.clone(),
                         font_size: 18.0,
                         color: Color::WHITE,
                     },
-                ),
+                )]),
                 ..default()
             });
         });
@@ -950,14 +955,14 @@ fn spawn_graphics_option<T: Component + Copy + Send + Sync + 'static>(
         ))
         .with_children(|button| {
             button.spawn(TextBundle {
-                text: Text::from_section(
+                text: Text::from_sections([TextSection::new(
                     label,
                     TextStyle {
                         font: font.clone(),
                         font_size: 16.0,
                         color: Color::WHITE,
                     },
-                ),
+                )]),
                 ..default()
             });
         });
@@ -1560,14 +1565,14 @@ fn spawn_favorite_button(
         ))
         .with_children(|button| {
             button.spawn(TextBundle {
-                text: Text::from_section(
+                text: Text::from_sections([TextSection::new(
                     label,
                     TextStyle {
                         font: font.clone(),
                         font_size: 16.0,
                         color: Color::WHITE,
                     },
-                ),
+                )]),
                 ..default()
             });
         });
