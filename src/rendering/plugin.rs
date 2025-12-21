@@ -1,9 +1,11 @@
+use bevy::pbr::ScreenSpaceReflectionsPlugin;
 use bevy::prelude::*;
 
 use crate::rendering::capabilities::{
     GraphicsCapabilities, GraphicsDetectionSet, detect_graphics_capabilities,
 };
 use crate::rendering::materials::{setup_triplanar_material, setup_water_material};
+use crate::rendering::ray_tracing::RayTracingSettings;
 use crate::rendering::triplanar_material::TriplanarMaterial;
 
 pub struct RenderingPlugin;
@@ -11,10 +13,12 @@ pub struct RenderingPlugin;
 impl Plugin for RenderingPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GraphicsCapabilities>()
+            .init_resource::<RayTracingSettings>()
             .add_systems(
                 Startup,
                 detect_graphics_capabilities.in_set(GraphicsDetectionSet),
             )
+            .add_plugins(ScreenSpaceReflectionsPlugin)
             // Register TriplanarMaterial as a custom material type
             .add_plugins(MaterialPlugin::<TriplanarMaterial>::default())
             // Register BlockyMaterial

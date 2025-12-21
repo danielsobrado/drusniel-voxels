@@ -11,6 +11,7 @@ pub struct GraphicsDetectionSet;
 pub struct GraphicsCapabilities {
     pub adapter_name: Option<String>,
     pub taa_supported: bool,
+    pub ray_tracing_supported: bool,
 }
 
 /// Determine whether the current adapter can support temporal anti-aliasing (TAA).
@@ -31,14 +32,20 @@ pub fn detect_graphics_capabilities(
         let sdr_filterable = sdr_features
             .flags
             .contains(TextureFormatFeatureFlags::FILTERABLE);
+        let features = adapter.features();
 
         capabilities.adapter_name = Some(adapter_info.name.clone());
         capabilities.taa_supported = hdr_filterable && sdr_filterable;
+        capabilities.ray_tracing_supported = features
+            .contains(bevy::render::settings::WgpuFeatures::RAY_QUERY)
+            && features
+                .contains(bevy::render::settings::WgpuFeatures::RAY_TRACING_ACCELERATION_STRUCTURE);
 
         info!(
             adapter = %adapter_info.name,
             backend = ?adapter_info.backend,
             taa_supported = capabilities.taa_supported,
+            ray_tracing_supported = capabilities.ray_tracing_supported,
             hdr_filterable,
             sdr_filterable,
             "Detected GPU capabilities",
