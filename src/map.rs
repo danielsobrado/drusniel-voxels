@@ -2,6 +2,7 @@ use crate::camera::controller::PlayerCamera;
 use crate::menu::PauseMenuState;
 use crate::voxel::world::VoxelWorld;
 use bevy::prelude::*;
+use bevy::hierarchy::DespawnRecursiveExt;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::ui::{
     AlignItems, FlexDirection, JustifyContent, PositionType, Val,

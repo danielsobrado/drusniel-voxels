@@ -4,10 +4,12 @@ use crate::menu::PauseMenuState;
 use crate::props::{Prop, PropAssets, PropConfig, PropType};
 use crate::voxel::types::VoxelType;
 use bevy::prelude::*;
+use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::ui::{
     AlignItems, FlexDirection, JustifyContent, Overflow,
     PositionType, Val,
 };
+use bevy::hierarchy::DespawnRecursiveExt;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -380,7 +382,7 @@ pub fn refresh_palette_ui(
                 .map(|sel| sel == &item.selection)
                 .unwrap_or(false);
 
-            commands.entity(list_entity).with_children(|list: &mut ChildBuilder| {
+            commands.entity(list_entity).with_children(|list| {
                 list.spawn((
                     Button,
                     Node {
@@ -436,7 +438,7 @@ pub fn refresh_palette_ui(
                 bookmark.name, bookmark.position[0], bookmark.position[1], bookmark.position[2]
             );
 
-            commands.entity(list_entity).with_children(|list: &mut ChildBuilder| {
+            commands.entity(list_entity).with_children(|list| {
                 list.spawn((
                     Node {
                         flex_direction: FlexDirection::Row,
@@ -449,7 +451,7 @@ pub fn refresh_palette_ui(
                     },
                     BackgroundColor(Color::srgba(0.12, 0.12, 0.15, 0.8)),
                 ))
-                .with_children(|row: &mut ChildBuilder| {
+                .with_children(|row| {
                     row.spawn((
                         Text::new(name),
                         TextFont {
@@ -583,7 +585,7 @@ fn spawn_palette_ui(
             BackgroundColor(Color::srgba(0.05, 0.05, 0.07, 0.9)),
             PaletteRoot,
         ))
-        .with_children(|root: &mut ChildBuilder| {
+        .with_children(|root| {
             root.spawn((
                 Text::new("Placement Palette (Tab to close)"),
                 TextFont {
