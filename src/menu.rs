@@ -6,7 +6,6 @@ use bevy::{
     input::keyboard::{Key, KeyboardInput},
     prelude::*,
     window::{PrimaryWindow, WindowMode, WindowResolution},
-    hierarchy::DespawnRecursiveExt,
 };
 use bevy::ui::{
     AlignItems, AlignSelf, FlexDirection, JustifyContent, PositionType,
@@ -1175,14 +1174,14 @@ fn apply_window_settings(
     };
     window.decorations = matches!(settings_state.display_mode, DisplayMode::Bordered);
     window.resolution = WindowResolution::new(
-        settings_state.resolution.x as f32,
-        settings_state.resolution.y as f32,
+        settings_state.resolution.x as u32,
+        settings_state.resolution.y as u32,
     );
 }
 
 fn close_settings_dialog(commands: &mut Commands, settings_state: &mut SettingsState) {
     if let Some(entity) = settings_state.dialog_root.take() {
-        commands.entity(entity).despawn_recursive();
+        commands.entity(entity).despawn();
     }
 }
 

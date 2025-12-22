@@ -9,7 +9,6 @@ use bevy::ui::{
     AlignItems, FlexDirection, JustifyContent, Overflow,
     PositionType, Val,
 };
-use bevy::hierarchy::DespawnRecursiveExt;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -400,7 +399,7 @@ pub fn refresh_palette_ui(
                     }),
                     PaletteItemButton(*index),
                 ))
-                .with_children(|button: &mut ChildBuilder| {
+                .with_children(|button| {
                     button.spawn((
                         Text::new(&item.label),
                         TextFont {
@@ -471,7 +470,7 @@ pub fn refresh_palette_ui(
                         BackgroundColor(Color::srgba(0.2, 0.35, 0.2, 0.85)),
                         BookmarkTeleportButton(index),
                     ))
-                    .with_children(|button: &mut ChildBuilder| {
+                    .with_children(|button| {
                         button.spawn((
                             Text::new("Teleport"),
                             TextFont {
@@ -492,7 +491,7 @@ pub fn refresh_palette_ui(
                         BackgroundColor(Color::srgba(0.35, 0.15, 0.15, 0.85)),
                         BookmarkDeleteButton(index),
                     ))
-                    .with_children(|button: &mut ChildBuilder| {
+                    .with_children(|button| {
                         button.spawn((
                             Text::new("Delete"),
                             TextFont {
@@ -690,7 +689,7 @@ fn spawn_palette_ui(
 
 fn despawn_palette_ui(commands: &mut Commands, palette: &mut ResMut<PlacementPaletteState>) {
     if let Some(entity) = palette.root.take() {
-        commands.entity(entity).despawn_recursive();
+        commands.entity(entity).despawn();
     }
 }
 
