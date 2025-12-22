@@ -7,7 +7,7 @@ use crate::voxel::world::VoxelWorld;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
-mod palette;
+pub mod palette;
 
 /// Component to mark the block highlight entity
 #[derive(Component)]

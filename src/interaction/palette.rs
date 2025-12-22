@@ -349,7 +349,7 @@ pub fn refresh_palette_ui(
     }
 
     if let Ok(list_entity) = list_query.single() {
-        commands.entity(list_entity).despawn_descendants();
+        commands.entity(list_entity).despawn_children();
 
         let search_lower = palette.search.to_lowercase();
 
@@ -427,7 +427,7 @@ pub fn refresh_palette_ui(
     }
 
     if let Ok(list_entity) = bookmark_query.single() {
-        commands.entity(list_entity).despawn_descendants();
+        commands.entity(list_entity).despawn_children();
 
         let font = asset_server.load("fonts/FiraSans-Bold.ttf");
 
@@ -536,7 +536,7 @@ pub fn place_prop_from_palette(
         return;
     };
 
-    let Some((block_pos, normal)) = (targeted.position, targeted.normal) else {
+    let (Some(block_pos), Some(normal)) = (targeted.position, targeted.normal) else {
         return;
     };
 
@@ -626,7 +626,7 @@ fn spawn_palette_ui(
                 BackgroundColor(Color::srgba(0.2, 0.3, 0.2, 0.9)),
                 SaveBookmarkButton,
             ))
-            .with_children(|button: &mut ChildBuilder| {
+            .with_children(|button| {
                 button.spawn((
                     Text::new("Bookmark current position (uses search text for name)"),
                     TextFont {

@@ -2,7 +2,9 @@ use crate::camera::controller::PlayerCamera;
 use crate::menu::PauseMenuState;
 use crate::voxel::world::VoxelWorld;
 use bevy::prelude::*;
+use bevy::asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::ui::{
     AlignItems, FlexDirection, JustifyContent, PositionType, Val,
 };
@@ -250,6 +252,7 @@ fn create_map_texture(images: &mut Assets<Image>, world: &VoxelWorld) -> Handle<
         TextureDimension::D2,
         &data,
         TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
     );
 
     image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {

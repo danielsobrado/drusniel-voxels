@@ -295,7 +295,7 @@ fn open_menu(
                         column_gap: Val::Px(12.0),
                         ..default()
                     })
-                    .with_children(|row: &mut ChildBuilder| {
+                    .with_children(|row| {
                         spawn_button(row, &font, "Save", PauseMenuButton::Save);
                         spawn_button(row, &font, "Load", PauseMenuButton::Load);
                         spawn_button(row, &font, "Settings", PauseMenuButton::Settings);
@@ -427,7 +427,7 @@ fn open_menu(
 
 
 fn spawn_labeled_input(
-    parent: &mut ChildBuilder,
+    parent: &mut bevy::ecs::hierarchy::ChildBuilder,
     font: &Handle<Font>,
     label: &str,
     placeholder: &str,
@@ -439,7 +439,7 @@ fn spawn_labeled_input(
             row_gap: Val::Px(4.0),
             ..default()
         })
-        .with_children(|column: &mut ChildBuilder| {
+        .with_children(|column| {
             column.spawn((
                 Text::new(label),
                 TextFont {
@@ -463,7 +463,7 @@ fn spawn_labeled_input(
                     BackgroundColor(Color::srgba(0.2, 0.2, 0.2, 0.95)),
                     InputField { field },
                 ))
-                .with_children(|input: &mut ChildBuilder| {
+                .with_children(|input| {
                     input.spawn((
                         Text::new(placeholder),
                         TextFont {
@@ -479,7 +479,7 @@ fn spawn_labeled_input(
 }
 
 fn spawn_button(
-    parent: &mut ChildBuilder,
+    parent: &mut bevy::ecs::hierarchy::ChildBuilder,
     font: &Handle<Font>,
     label: &str,
     action: PauseMenuButton,
@@ -497,7 +497,7 @@ fn spawn_button(
             BackgroundColor(Color::srgba(0.25, 0.25, 0.25, 0.9)),
             action,
         ))
-        .with_children(|button: &mut ChildBuilder| {
+        .with_children(|button| {
             button.spawn((
                 Text::new(label),
                 TextFont {
@@ -795,7 +795,7 @@ fn spawn_settings_dialog(
                 BackgroundColor(Color::srgba(0.25, 0.25, 0.25, 0.9)),
                 CloseSettingsButton,
             ))
-            .with_children(|button: &mut ChildBuilder| {
+            .with_children(|button| {
                 button.spawn((
                     Text::new("Close"),
                     TextFont {
@@ -817,7 +817,7 @@ fn spawn_settings_dialog(
 }
 
 fn spawn_settings_tab_button(
-    parent: &mut ChildBuilder,
+    parent: &mut bevy::ecs::hierarchy::ChildBuilder,
     font: &Handle<Font>,
     label: &str,
     tab: SettingsTabButton,
@@ -834,7 +834,7 @@ fn spawn_settings_tab_button(
             BackgroundColor(Color::srgba(0.18, 0.18, 0.18, 0.9)),
             tab,
         ))
-        .with_children(|button: &mut ChildBuilder| {
+        .with_children(|button| {
             button.spawn((
                 Text::new(label),
                 TextFont {
@@ -848,7 +848,7 @@ fn spawn_settings_tab_button(
 }
 
 fn spawn_graphics_option<T: Component + Copy + Send + Sync + 'static>(
-    parent: &mut ChildBuilder,
+    parent: &mut bevy::ecs::hierarchy::ChildBuilder,
     font: &Handle<Font>,
     label: &str,
     tag: T,
@@ -865,7 +865,7 @@ fn spawn_graphics_option<T: Component + Copy + Send + Sync + 'static>(
             BackgroundColor(Color::srgba(0.2, 0.2, 0.2, 0.9)),
             tag,
         ))
-        .with_children(|button: &mut ChildBuilder| {
+        .with_children(|button| {
             button.spawn((
                 Text::new(label),
                 TextFont {
@@ -1455,7 +1455,7 @@ fn update_input_backgrounds(
 }
 
 fn spawn_favorite_button(
-    parent: &mut ChildBuilder,
+    parent: &mut bevy::ecs::hierarchy::ChildBuilder,
     font: &Handle<Font>,
     index: usize,
     favorite: &FavoriteServer,
@@ -1474,7 +1474,7 @@ fn spawn_favorite_button(
             BackgroundColor(Color::srgba(0.18, 0.18, 0.18, 0.9)),
             FavoriteButton(index),
         ))
-        .with_children(|button: &mut ChildBuilder| {
+        .with_children(|button| {
             button.spawn((
                 Text::new(label),
                 TextFont {
