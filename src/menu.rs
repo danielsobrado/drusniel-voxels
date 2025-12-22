@@ -11,6 +11,9 @@ use bevy::ui::{
     UiRect, Val,
 };
 use std::net::ToSocketAddrs;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::{Duration, Instant};
 
 #[derive(Resource, Default, Clone)]
@@ -30,6 +33,23 @@ pub struct MultiplayerFormState {
     pub active_field: Option<MultiplayerField>,
 }
 
+
+#[derive(Resource, Default)]
+struct ConnectTaskState {
+    receiver: Option<Arc<Mutex<Receiver<ConnectOutcome>>>>,
+}
+
+enum ConnectOutcome {
+    Success {
+        ip: String,
+        port: String,
+        address: String,
+        latency_ms: u128,
+    },
+    Failure {
+        message: String,
+    },
+}
 
 #[derive(Resource, Default)]
 pub struct PauseMenuState {
@@ -171,6 +191,7 @@ impl Plugin for PauseMenuPlugin {
         app.init_resource::<PauseMenuState>()
             .init_resource::<SettingsState>()
             .init_resource::<MultiplayerFormState>()
+            .init_resource::<ConnectTaskState>()
             .init_resource::<ChatState>()
             .init_resource::<NetworkSession>()
             .add_systems(
@@ -178,6 +199,7 @@ impl Plugin for PauseMenuPlugin {
                 (
                     toggle_pause_menu,
                     handle_menu_buttons,
+                    poll_connect_task_results,
                     handle_settings_buttons,
                     handle_input_interaction,
                     process_input_characters,
@@ -901,6 +923,7 @@ fn handle_menu_buttons(
     mut state: ResMut<PauseMenuState>,
     mut settings_state: ResMut<SettingsState>,
     mut form_state: ResMut<MultiplayerFormState>,
+    mut connect_tasks: ResMut<ConnectTaskState>,
     mut network: ResMut<NetworkSession>,
     mut chat: ResMut<ChatState>,
     favorites_list: Query<Entity, With<FavoritesList>>,
@@ -943,6 +966,12 @@ fn handle_menu_buttons(
                 chat.push_system("Server started");
             }
             PauseMenuButton::Connect => {
+                if connect_tasks.receiver.is_some() {
+                    warn!("Connection attempt already in progress");
+                    chat.push_system("Connection already in progress");
+                    continue;
+                }
+
                 if form_state.join_ip.is_empty() || form_state.join_port.is_empty() {
                     warn!("Cannot connect: IP or port missing");
                     chat.push_system("Cannot connect: IP or port missing");
@@ -968,42 +997,48 @@ fn handle_menu_buttons(
                 };
 
                 let address = format!("{}:{}", form_state.join_ip, port);
-                let mut socket_addrs = match address.to_socket_addrs() {
-                    Ok(addrs) => addrs,
-                    Err(err) => {
-                        warn!("Cannot connect: invalid address - {}", err);
-                        chat.push_system("Cannot connect: invalid address");
-                        continue;
-                    }
-                };
+                let join_ip = form_state.join_ip.clone();
+                let join_port = form_state.join_port.clone();
+                let (tx, rx) = mpsc::channel();
 
-                let Some(target_addr) = socket_addrs.next() else {
-                    warn!("Cannot connect: no resolved addresses for {}", address);
-                    chat.push_system("Cannot connect: address could not be resolved");
-                    continue;
-                };
+                connect_tasks.receiver = Some(Arc::new(Mutex::new(rx)));
+                chat.push_system(format!("Connecting to {}...", address));
 
-                let start = Instant::now();
-                let ping_result =
-                    std::net::TcpStream::connect_timeout(&target_addr, Duration::from_secs(3));
-                if let Err(err) = ping_result {
-                    warn!("Cannot connect: ping/health check failed - {}", err);
-                    chat.push_system("Connection failed: host unreachable");
-                    network.reset_client();
-                    continue;
-                }
+                thread::spawn(move || {
+                    let result = (|| -> Result<ConnectOutcome, String> {
+                        let mut socket_addrs = address
+                            .to_socket_addrs()
+                            .map_err(|err| format!("Cannot connect: invalid address - {}", err))?;
 
-                let latency_ms = start.elapsed().as_millis();
-                network.client_connected = true;
-                network.connection_ip = Some(form_state.join_ip.clone());
-                network.connection_port = Some(form_state.join_port.clone());
-                network.last_latency_ms = Some(latency_ms);
-                network.last_health_ok = true;
+                        let Some(target_addr) = socket_addrs.next() else {
+                            return Err(format!(
+                                "Cannot connect: no resolved addresses for {}",
+                                address
+                            ));
+                        };
 
-                info!("Connected to {} (latency: {} ms)", address, latency_ms);
-                chat.push_message(crate::chat::ChatMessage {
-                    user: chat.username.clone(),
-                    content: format!("Connected to {} ({} ms latency)", address, latency_ms),
+                        let start = Instant::now();
+                        std::net::TcpStream::connect_timeout(&target_addr, Duration::from_secs(3))
+                            .map_err(|err| {
+                                format!("Cannot connect: ping/health check failed - {}", err)
+                            })?;
+
+                        let latency_ms = start.elapsed().as_millis();
+
+                        Ok(ConnectOutcome::Success {
+                            ip: join_ip,
+                            port: join_port,
+                            address,
+                            latency_ms,
+                        })
+                    })();
+
+                    let outcome = match result {
+                        Ok(success) => success,
+                        Err(message) => ConnectOutcome::Failure { message },
+                    };
+
+                    let _ = tx.send(outcome);
                 });
             }
             PauseMenuButton::Settings => {
@@ -1324,6 +1359,61 @@ fn update_settings_resolution_backgrounds(
         } else {
             Color::srgba(0.2, 0.2, 0.2, 0.9).into()
         };
+    }
+}
+
+fn poll_connect_task_results(
+    mut connect_tasks: ResMut<ConnectTaskState>,
+    mut network: ResMut<NetworkSession>,
+    mut chat: ResMut<ChatState>,
+) {
+    let Some(receiver) = connect_tasks.receiver.as_ref() else {
+        return;
+    };
+
+    let result = receiver
+        .lock()
+        .map(|receiver| receiver.try_recv())
+        .unwrap_or_else(|err| {
+            warn!("Failed to check connection result: {}", err);
+            Err(TryRecvError::Disconnected)
+        });
+
+    match result {
+        Ok(ConnectOutcome::Success {
+            ip,
+            port,
+            address,
+            latency_ms,
+        }) => {
+            network.client_connected = true;
+            network.connection_ip = Some(ip);
+            network.connection_port = Some(port);
+            network.last_latency_ms = Some(latency_ms);
+            network.last_health_ok = true;
+
+            info!("Connected to {} (latency: {} ms)", address, latency_ms);
+            chat.push_message(crate::chat::ChatMessage {
+                user: chat.username.clone(),
+                content: format!("Connected to {} ({} ms latency)", address, latency_ms),
+            });
+            connect_tasks.receiver = None;
+        }
+        Ok(ConnectOutcome::Failure { message }) => {
+            warn!("{}", message);
+            chat.push_system(message);
+            network.reset_client();
+            connect_tasks.receiver = None;
+        }
+        Err(TryRecvError::Disconnected) => {
+            warn!("Connection attempt ended unexpectedly");
+            chat.push_system("Connection failed: internal error");
+            network.reset_client();
+            connect_tasks.receiver = None;
+        }
+        Err(TryRecvError::Empty) => {
+            // Keep waiting for the background task
+        }
     }
 }
 
