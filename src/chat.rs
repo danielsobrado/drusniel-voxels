@@ -189,7 +189,7 @@ fn update_chat_log(chat_state: Res<ChatState>, mut query: Query<&mut Text, With<
         return;
     }
 
-    if let Ok(mut text) = query.get_single_mut() {
+    if let Ok(mut text) = query.single_mut() {
         let body = chat_state
             .messages
             .iter()
@@ -209,7 +209,7 @@ fn update_chat_prompt(
         return;
     }
 
-    if let Ok(mut text) = query.get_single_mut() {
+    if let Ok(mut text) = query.single_mut() {
         if chat_state.active {
             text.0 = format!("{}: {}", chat_state.username, chat_state.buffer);
         } else {

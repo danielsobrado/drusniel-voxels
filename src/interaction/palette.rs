@@ -269,7 +269,7 @@ pub fn handle_bookmark_buttons(
 
     for interaction in save_buttons.iter_mut() {
         if *interaction == Interaction::Pressed {
-            if let Ok((transform, camera)) = camera_read_query.get_single() {
+            if let Ok((transform, camera)) = camera_read_query.single() {
                 let name = if palette.search.is_empty() {
                     format!("Bookmark {}", store.bookmarks.len() + 1)
                 } else {
@@ -291,7 +291,7 @@ pub fn handle_bookmark_buttons(
     for (interaction, BookmarkTeleportButton(index)) in teleport_buttons.iter_mut() {
         if *interaction == Interaction::Pressed {
             if let Some(bookmark) = store.bookmarks.get(*index).cloned() {
-                if let Ok((mut transform, mut camera)) = camera_query.get_single_mut() {
+                if let Ok((mut transform, mut camera)) = camera_query.single_mut() {
                     transform.translation = Vec3::from_array(bookmark.position);
                     transform.rotation =
                         Quat::from_euler(EulerRot::YXZ, bookmark.yaw, bookmark.pitch, 0.0);
@@ -335,11 +335,11 @@ pub fn refresh_palette_ui(
         return;
     }
 
-    if let Ok(mut search_text) = search_query.get_single_mut() {
+    if let Ok(mut search_text) = search_query.single_mut() {
         search_text.0 = format!("Search: {}", palette.search);
     }
 
-    if let Ok(mut selection_text) = selection_query.get_single_mut() {
+    if let Ok(mut selection_text) = selection_query.single_mut() {
         selection_text.0 = match &palette.active_selection {
             Some(PlacementSelection::Voxel(v)) => format!("Selected: {:?}", v),
             Some(PlacementSelection::Prop { id, prop_type }) => {
@@ -349,7 +349,7 @@ pub fn refresh_palette_ui(
         };
     }
 
-    if let Ok(list_entity) = list_query.get_single() {
+    if let Ok(list_entity) = list_query.single() {
         commands.entity(list_entity).despawn_descendants();
 
         let search_lower = palette.search.to_lowercase();
@@ -427,7 +427,7 @@ pub fn refresh_palette_ui(
         }
     }
 
-    if let Ok(list_entity) = bookmark_query.get_single() {
+    if let Ok(list_entity) = bookmark_query.single() {
         commands.entity(list_entity).despawn_descendants();
 
         let font = asset_server.load("fonts/FiraSans-Bold.ttf");

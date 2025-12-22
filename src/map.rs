@@ -169,7 +169,7 @@ fn update_player_marker(
         return;
     }
 
-    let Ok(camera_transform) = camera_query.get_single() else {
+    let Ok(camera_transform) = camera_query.single() else {
         return;
     };
 
@@ -185,7 +185,7 @@ fn update_player_marker(
     let left = x_ratio * MAP_SIZE - (MARKER_SIZE * 0.5);
     let top = (1.0 - z_ratio) * MAP_SIZE - (MARKER_SIZE * 0.5);
 
-    if let Ok(mut node) = marker_query.get_single_mut() {
+    if let Ok(mut node) = marker_query.single_mut() {
         node.left = Val::Px(left);
         node.top = Val::Px(top);
     }
@@ -200,11 +200,11 @@ fn update_coordinates_text(
         return;
     }
 
-    let Ok(mut text) = text_query.get_single_mut() else {
+    let Ok(mut text) = text_query.single_mut() else {
         return;
     };
 
-    let Ok(camera_transform) = camera_query.get_single() else {
+    let Ok(camera_transform) = camera_query.single() else {
         return;
     };
 

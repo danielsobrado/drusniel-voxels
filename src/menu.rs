@@ -1044,7 +1044,7 @@ fn handle_menu_buttons(
                 let index = form_state.favorites.len();
                 form_state.favorites.push(new_favorite.clone());
 
-                if let Ok(container) = favorites_list.get_single() {
+                if let Ok(container) = favorites_list.single() {
                     let font = asset_server.load("fonts/FiraSans-Bold.ttf");
                     commands.entity(container).with_children(|parent| {
                         spawn_favorite_button(parent, &font, index, &new_favorite);
@@ -1165,7 +1165,7 @@ fn apply_window_settings(
     settings_state: &SettingsState,
     windows: &mut Query<&mut Window, With<PrimaryWindow>>,
 ) {
-    let Ok(mut window) = windows.get_single_mut() else {
+    let Ok(mut window) = windows.single_mut() else {
         return;
     };
 
@@ -1217,7 +1217,7 @@ fn update_settings_content_visibility(
         return;
     }
 
-    if let Ok(mut graphics_visibility) = graphics_query.get_single_mut() {
+    if let Ok(mut graphics_visibility) = graphics_query.single_mut() {
         *graphics_visibility = if settings_state.active_tab == SettingsTab::Graphics {
             Visibility::Visible
         } else {
@@ -1225,7 +1225,7 @@ fn update_settings_content_visibility(
         };
     }
 
-    if let Ok(mut gameplay_visibility) = gameplay_query.get_single_mut() {
+    if let Ok(mut gameplay_visibility) = gameplay_query.single_mut() {
         *gameplay_visibility = if settings_state.active_tab == SettingsTab::Gameplay {
             Visibility::Visible
         } else {
