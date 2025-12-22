@@ -3,14 +3,12 @@ use crate::network::NetworkSession;
 use crate::rendering::{capabilities::GraphicsCapabilities, ray_tracing::RayTracingSettings};
 use crate::voxel::{meshing::ChunkMesh, persistence, world::VoxelWorld};
 use bevy::{
-    input::keyboard::ReceivedCharacter,
-    hierarchy::DespawnRecursiveExt,
     prelude::*,
     window::{PrimaryWindow, WindowMode, WindowResolution},
 };
 use bevy::ui::{
     AlignItems, AlignSelf, FlexDirection, JustifyContent, PositionType,
-    Style, UiRect, Val,
+    UiRect, Val,
 };
 use std::net::ToSocketAddrs;
 use std::time::{Duration, Instant};
@@ -302,16 +300,15 @@ fn open_menu(
                         spawn_button(row, &font, "Settings", PauseMenuButton::Settings);
                     });
 
-                    menu.spawn(NodeBundle {
-                        style: Style {
+                    menu.spawn((
+                        Node {
                             flex_direction: FlexDirection::Column,
                             row_gap: Val::Px(10.0),
                             padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
                             ..default()
                         },
-                        background_color: Color::NONE.into(),
-                        ..default()
-                    })
+                        BackgroundColor(Color::NONE),
+                    ))
                     .with_children(|section| {
                         section.spawn((
                             Text::new("Host Game"),
@@ -594,12 +591,9 @@ fn spawn_settings_dialog(
                         ));
 
                         graphics
-                            .spawn(NodeBundle {
-                                style: Style {
-                                    flex_direction: FlexDirection::Row,
-                                    column_gap: Val::Px(8.0),
-                                    ..default()
-                                },
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Row,
+                                column_gap: Val::Px(8.0),
                                 ..default()
                             })
                             .with_children(|row| {

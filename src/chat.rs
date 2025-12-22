@@ -77,24 +77,18 @@ fn spawn_chat_overlay(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     commands
         .spawn((
-            NodeBundle {
-                style: Style {
-                    position_type: PositionType::Absolute,
-                    position: UiRect {
-                        bottom: Val::Px(12.0),
-                        right: Val::Px(12.0),
-                        ..default()
-                    },
-                    flex_direction: FlexDirection::Column,
-                    row_gap: Val::Px(6.0),
-                    padding: UiRect::axes(Val::Px(8.0), Val::Px(6.0)),
-                    min_width: Val::Px(280.0),
-                    max_width: Val::Px(420.0),
-                    ..default()
-                },
-                background_color: Color::srgba(0.0, 0.0, 0.0, 0.45).into(),
+            Node {
+                position_type: PositionType::Absolute,
+                bottom: Val::Px(12.0),
+                right: Val::Px(12.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(6.0),
+                padding: UiRect::axes(Val::Px(8.0), Val::Px(6.0)),
+                min_width: Val::Px(280.0),
+                max_width: Val::Px(420.0),
                 ..default()
             },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.45)),
             ChatOverlayRoot,
         ))
         .with_children(|overlay| {
