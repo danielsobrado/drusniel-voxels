@@ -1,4 +1,4 @@
-use bevy::{input::keyboard::ReceivedCharacter, prelude::*};
+use bevy::prelude::*;
 
 use crate::menu::PauseMenuState;
 use crate::network::NetworkSession;
@@ -99,32 +99,24 @@ fn spawn_chat_overlay(mut commands: Commands, asset_server: Res<AssetServer>) {
         ))
         .with_children(|overlay| {
             overlay.spawn((
-                TextBundle {
-                    text: Text::from_section(
-                        "", // filled by update_chat_log
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 14.0,
-                            color: Color::WHITE,
-                        },
-                    ),
+                Text::new(""),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 14.0,
                     ..default()
                 },
+                TextColor(Color::WHITE),
                 ChatLogText,
             ));
 
             overlay.spawn((
-                TextBundle {
-                    text: Text::from_section(
-                        "Press Ctrl+A to chat",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 13.0,
-                            color: Color::srgba(0.9, 0.9, 0.9, 0.9),
-                        },
-                    ),
+                Text::new("Press Ctrl+A to chat"),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 13.0,
                     ..default()
                 },
+                TextColor(Color::srgba(0.9, 0.9, 0.9, 0.9)),
                 ChatInputText,
             ));
         });
@@ -146,7 +138,7 @@ fn toggle_chat_input(keys: Res<ButtonInput<KeyCode>>, mut chat_state: ResMut<Cha
 
 fn process_chat_characters(
     mut chat_state: ResMut<ChatState>,
-    mut char_evr: EventReader<ReceivedCharacter>,
+    mut char_evr: EventReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
     pause_state: Option<Res<PauseMenuState>>,
 ) {
@@ -159,11 +151,12 @@ fn process_chat_characters(
     }
 
     for ev in char_evr.read() {
-        let ch = ev.char;
-        if ch == '\n' || ch == '\r' {
+        if !ev.state.is_pressed() {
             continue;
         }
-        chat_state.buffer.push(ch);
+        if let Key::Character(ch) = &ev.logical_key {
+            chat_state.buffer.push_str(ch);
+        }
     }
 }
 
@@ -184,9 +177,11 @@ fn submit_chat_message(
     if !network.is_connected() {
         chat_state.push_system("Cannot send chat: not connected");
     } else {
+        let user = chat_state.username.clone();
+        let content = chat_state.buffer.clone();
         chat_state.push_message(ChatMessage {
-            user: chat_state.username.clone(),
-            content: chat_state.buffer.clone(),
+            user,
+            content,
         });
     }
 
@@ -207,7 +202,7 @@ fn update_chat_log(chat_state: Res<ChatState>, mut query: Query<&mut Text, With<
             .collect::<Vec<_>>()
             .join("\n");
 
-        text.sections[0].value = body;
+        text.0 = body;
     }
 }
 
@@ -221,9 +216,9 @@ fn update_chat_prompt(
 
     if let Ok(mut text) = query.get_single_mut() {
         if chat_state.active {
-            text.sections[0].value = format!("{}: {}", chat_state.username, chat_state.buffer);
+            text.0 = format!("{}: {}", chat_state.username, chat_state.buffer);
         } else {
-            text.sections[0].value = "Press Ctrl+A to chat".to_string();
+            text.0 = "Press Ctrl+A to chat".to_string();
         }
     }
 }

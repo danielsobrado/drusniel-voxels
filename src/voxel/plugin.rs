@@ -739,9 +739,7 @@ fn update_chunk_lod_system(
     camera_query: Query<&Transform, With<PlayerCamera>>,
     lod_settings: Res<LodSettings>,
 ) {
-    let Ok(camera_transform) = camera_query.get_single() else {
-        return;
-    };
+    let camera_transform = camera_query.single();
 
     let camera_pos = camera_transform.translation;
 

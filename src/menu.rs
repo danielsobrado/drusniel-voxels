@@ -9,8 +9,8 @@ use bevy::{
     window::{PrimaryWindow, WindowMode, WindowResolution},
 };
 use bevy::ui::{
-    AlignItems, AlignSelf, ButtonBundle, FlexDirection, JustifyContent, NodeBundle, PositionType,
-    Style, TextBundle, TextSection, TextStyle, UiRect, Val,
+    AlignItems, AlignSelf, FlexDirection, JustifyContent, PositionType,
+    Style, UiRect, Val,
 };
 use std::net::ToSocketAddrs;
 use std::time::{Duration, Instant};
@@ -291,15 +291,12 @@ fn open_menu(
                     });
 
 
-                    menu.spawn(NodeBundle {
-                        style: Style {
-                            flex_direction: FlexDirection::Row,
-                            column_gap: Val::Px(12.0),
-                            ..default()
-                        },
+                    menu.spawn(Node {
+                        flex_direction: FlexDirection::Row,
+                        column_gap: Val::Px(12.0),
                         ..default()
                     })
-                    .with_children(|row| {
+                    .with_children(|row: &mut ChildBuilder| {
                         spawn_button(row, &font, "Save", PauseMenuButton::Save);
                         spawn_button(row, &font, "Load", PauseMenuButton::Load);
                         spawn_button(row, &font, "Settings", PauseMenuButton::Settings);
@@ -316,17 +313,15 @@ fn open_menu(
                         ..default()
                     })
                     .with_children(|section| {
-                        section.spawn(TextBundle {
-                            text: Text::from_sections([TextSection::new(
-                                "Host Game",
-                                TextStyle {
-                                    font: font.clone(),
-                                    font_size: 22.0,
-                                    color: Color::WHITE,
-                                },
-                            )]),
-                            ..default()
-                        });
+                        section.spawn((
+                            Text::new("Host Game"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 22.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
 
                         spawn_labeled_input(
                             section,
@@ -339,28 +334,22 @@ fn open_menu(
                         spawn_button(section, &font, "Start Server", PauseMenuButton::StartServer);
                     });
 
-                    menu.spawn(NodeBundle {
-                        style: Style {
-                            flex_direction: FlexDirection::Column,
-                            row_gap: Val::Px(10.0),
-                            padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
-                            ..default()
-                        },
-                        background_color: Color::NONE.into(),
+                    menu.spawn(Node {
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(10.0),
+                        padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
                         ..default()
                     })
                     .with_children(|section| {
-                        section.spawn(TextBundle {
-                            text: Text::from_sections([TextSection::new(
-                                "Join Game",
-                                TextStyle {
-                                    font: font.clone(),
-                                    font_size: 22.0,
-                                    color: Color::WHITE,
-                                },
-                            )]),
-                            ..default()
-                        });
+                        section.spawn((
+                            Text::new("Join Game"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 22.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
 
                         spawn_labeled_input(
                             section,
@@ -385,12 +374,9 @@ fn open_menu(
                         );
 
                         section
-                            .spawn(NodeBundle {
-                                style: Style {
-                                    flex_direction: FlexDirection::Row,
-                                    column_gap: Val::Px(10.0),
-                                    ..default()
-                                },
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Row,
+                                column_gap: Val::Px(10.0),
                                 ..default()
                             })
                             .with_children(|row| {
@@ -404,29 +390,26 @@ fn open_menu(
                             });
 
                         section
-                            .spawn(NodeBundle {
-                                style: Style {
+                            .spawn((
+                                Node {
                                     flex_direction: FlexDirection::Column,
                                     row_gap: Val::Px(6.0),
                                     padding: UiRect::axes(Val::Px(6.0), Val::Px(4.0)),
                                     ..default()
                                 },
-                                background_color: Color::srgba(0.05, 0.05, 0.05, 0.8).into(),
-                                ..default()
-                            })
-                            .insert(FavoritesList)
+                                BackgroundColor(Color::srgba(0.05, 0.05, 0.05, 0.8)),
+                                FavoritesList,
+                            ))
                             .with_children(|favorites| {
-                                favorites.spawn(TextBundle {
-                                    text: Text::from_sections([TextSection::new(
-                                        "Favorite Servers",
-                                        TextStyle {
-                                            font: font.clone(),
-                                            font_size: 18.0,
-                                            color: Color::WHITE,
-                                        },
-                                    )]),
-                                    ..default()
-                                });
+                                favorites.spawn((
+                                    Text::new("Favorite Servers"),
+                                    TextFont {
+                                        font: font.clone(),
+                                        font_size: 18.0,
+                                        ..default()
+                                    },
+                                    TextColor(Color::WHITE),
+                                ));
 
                                 for (index, favorite) in form_state.favorites.iter().enumerate() {
                                     spawn_favorite_button(favorites, &font, index, favorite);
@@ -453,55 +436,44 @@ fn spawn_labeled_input(
     field: MultiplayerField,
 ) {
     parent
-        .spawn(NodeBundle {
-            style: Style {
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(4.0),
-                ..default()
-            },
+        .spawn(Node {
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(4.0),
             ..default()
         })
-        .with_children(|column| {
-            column.spawn(TextBundle {
-                text: Text::from_sections([TextSection::new(
-                    label,
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 16.0,
-                        color: Color::WHITE,
-                    },
-                )]),
-                ..default()
-            });
+        .with_children(|column: &mut ChildBuilder| {
+            column.spawn((
+                Text::new(label),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 16.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+            ));
 
             column
                 .spawn((
-                    ButtonBundle {
-                        style: Style {
-                            width: Val::Px(320.0),
-                            padding: UiRect::all(Val::Px(10.0)),
-                            justify_content: JustifyContent::FlexStart,
-                            align_items: AlignItems::Center,
-                            ..default()
-                        },
-                        background_color: Color::srgba(0.2, 0.2, 0.2, 0.95).into(),
+                    Button,
+                    Node {
+                        width: Val::Px(320.0),
+                        padding: UiRect::all(Val::Px(10.0)),
+                        justify_content: JustifyContent::FlexStart,
+                        align_items: AlignItems::Center,
                         ..default()
                     },
+                    BackgroundColor(Color::srgba(0.2, 0.2, 0.2, 0.95)),
                     InputField { field },
                 ))
-                .with_children(|input| {
+                .with_children(|input: &mut ChildBuilder| {
                     input.spawn((
-                        TextBundle {
-                            text: Text::from_sections([TextSection::new(
-                                placeholder,
-                                TextStyle {
-                                    font: font.clone(),
-                                    font_size: 16.0,
-                                    color: Color::srgba(0.8, 0.8, 0.8, 0.9),
-                                },
-                            )]),
+                        Text::new(placeholder),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 16.0,
                             ..default()
                         },
+                        TextColor(Color::srgba(0.8, 0.8, 0.8, 0.9)),
                         InputText { field },
                     ));
                 });
@@ -516,31 +488,27 @@ fn spawn_button(
 ) {
     parent
         .spawn((
-            ButtonBundle {
-                style: Style {
-                    width: Val::Px(160.0),
-                    padding: UiRect::all(Val::Px(12.0)),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                background_color: Color::srgba(0.25, 0.25, 0.25, 0.9).into(),
+            Button,
+            Node {
+                width: Val::Px(160.0),
+                padding: UiRect::all(Val::Px(12.0)),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
                 ..default()
             },
+            BackgroundColor(Color::srgba(0.25, 0.25, 0.25, 0.9)),
             action,
         ))
-        .with_children(|button| {
-            button.spawn(TextBundle {
-                text: Text::from_sections([TextSection::new(
-                    label,
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 20.0,
-                        color: Color::WHITE,
-                    },
-                )]),
-                ..default()
-            });
+        .with_children(|button: &mut ChildBuilder| {
+            button.spawn((
+                Text::new(label),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 20.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+            ));
         });
 }
 
@@ -553,43 +521,35 @@ fn spawn_settings_dialog(
     ray_tracing_supported: bool,
 ) -> Entity {
     let mut dialog_entity = commands.spawn((
-        NodeBundle {
-            style: Style {
-                width: Val::Percent(70.0),
-                height: Val::Percent(70.0),
-                padding: UiRect::all(Val::Px(20.0)),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(12.0),
-                align_self: AlignSelf::Center,
-                justify_content: JustifyContent::FlexStart,
-                ..default()
-            },
-            background_color: Color::srgba(0.08, 0.08, 0.08, 0.95).into(),
+        Node {
+            width: Val::Percent(70.0),
+            height: Val::Percent(70.0),
+            padding: UiRect::all(Val::Px(20.0)),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(12.0),
+            align_self: AlignSelf::Center,
+            justify_content: JustifyContent::FlexStart,
             ..default()
         },
+        BackgroundColor(Color::srgba(0.08, 0.08, 0.08, 0.95)),
         SettingsDialogRoot,
     ));
 
     dialog_entity.with_children(|dialog| {
-        dialog.spawn(TextBundle {
-            text: Text::from_sections([TextSection::new(
-                "Settings",
-                TextStyle {
-                    font: font.clone(),
-                    font_size: 28.0,
-                    color: Color::WHITE,
-                },
-            )]),
-            ..default()
-        });
+        dialog.spawn((
+            Text::new("Settings"),
+            TextFont {
+                font: font.clone(),
+                font_size: 28.0,
+                ..default()
+            },
+            TextColor(Color::WHITE),
+        ));
 
         dialog
-            .spawn(NodeBundle {
-                style: Style {
-                    flex_direction: FlexDirection::Row,
-                    column_gap: Val::Px(10.0),
-                    ..default()
-                },
+            .spawn(Node {
+                flex_direction: FlexDirection::Row,
+                column_gap: Val::Px(10.0),
                 ..default()
             })
             .with_children(|tabs| {
@@ -598,46 +558,40 @@ fn spawn_settings_dialog(
             });
 
         dialog
-            .spawn(NodeBundle {
-                style: Style {
+            .spawn((
+                Node {
                     flex_direction: FlexDirection::Column,
                     row_gap: Val::Px(12.0),
                     padding: UiRect::all(Val::Px(12.0)),
                     ..default()
                 },
-                background_color: Color::srgba(0.12, 0.12, 0.12, 0.95).into(),
-                ..default()
-            })
+                BackgroundColor(Color::srgba(0.12, 0.12, 0.12, 0.95)),
+            ))
             .with_children(|content| {
                 content
                     .spawn((
-                        NodeBundle {
-                            style: Style {
-                                flex_direction: FlexDirection::Column,
-                                row_gap: Val::Px(10.0),
-                                ..default()
-                            },
-                            visibility: if settings_state.active_tab == SettingsTab::Graphics {
-                                Visibility::Visible
-                            } else {
-                                Visibility::Hidden
-                            },
+                        Node {
+                            flex_direction: FlexDirection::Column,
+                            row_gap: Val::Px(10.0),
                             ..default()
                         },
+                        Visibility::from(if settings_state.active_tab == SettingsTab::Graphics {
+                            Visibility::Visible
+                        } else {
+                            Visibility::Hidden
+                        }),
                         GraphicsTabContent,
                     ))
                     .with_children(|graphics| {
-                        graphics.spawn(TextBundle {
-                            text: Text::from_sections([TextSection::new(
-                                "Graphics Quality",
-                                TextStyle {
-                                    font: font.clone(),
-                                    font_size: 20.0,
-                                    color: Color::WHITE,
-                                },
-                            )]),
-                            ..default()
-                        });
+                        graphics.spawn((
+                            Text::new("Graphics Quality"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 20.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
 
                         graphics
                             .spawn(NodeBundle {
@@ -669,25 +623,20 @@ fn spawn_settings_dialog(
                                 );
                             });
 
-                        graphics.spawn(TextBundle {
-                            text: Text::from_sections([TextSection::new(
-                                "Anti-Aliasing",
-                                TextStyle {
-                                    font: font.clone(),
-                                    font_size: 20.0,
-                                    color: Color::WHITE,
-                                },
-                            )]),
-                            ..default()
-                        });
+                        graphics.spawn((
+                            Text::new("Anti-Aliasing"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 20.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
 
                         graphics
-                            .spawn(NodeBundle {
-                                style: Style {
-                                    flex_direction: FlexDirection::Row,
-                                    column_gap: Val::Px(8.0),
-                                    ..default()
-                                },
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Row,
+                                column_gap: Val::Px(8.0),
                                 ..default()
                             })
                             .with_children(|row| {
@@ -711,39 +660,32 @@ fn spawn_settings_dialog(
                                 );
                             });
 
-                        graphics.spawn(TextBundle {
-                            text: Text::from_sections([TextSection::new(
-                                "Ray Tracing",
-                                TextStyle {
-                                    font: font.clone(),
-                                    font_size: 20.0,
-                                    color: Color::WHITE,
-                                },
-                            )]),
-                            ..default()
-                        });
+                        graphics.spawn((
+                            Text::new("Ray Tracing"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 20.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
 
                         if !ray_tracing_supported {
-                            graphics.spawn(TextBundle {
-                                text: Text::from_sections([TextSection::new(
-                                    "Ray tracing requires a compatible GPU.",
-                                    TextStyle {
-                                        font: font.clone(),
-                                        font_size: 14.0,
-                                        color: Color::srgba(0.8, 0.4, 0.4, 1.0),
-                                    },
-                                )]),
-                                ..default()
-                            });
+                            graphics.spawn((
+                                Text::new("Ray tracing requires a compatible GPU."),
+                                TextFont {
+                                    font: font.clone(),
+                                    font_size: 14.0,
+                                    ..default()
+                                },
+                                TextColor(Color::srgba(0.8, 0.4, 0.4, 1.0)),
+                            ));
                         }
 
                         graphics
-                            .spawn(NodeBundle {
-                                style: Style {
-                                    flex_direction: FlexDirection::Row,
-                                    column_gap: Val::Px(8.0),
-                                    ..default()
-                                },
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Row,
+                                column_gap: Val::Px(8.0),
                                 ..default()
                             })
                             .with_children(|row| {
@@ -751,25 +693,20 @@ fn spawn_settings_dialog(
                                 spawn_graphics_option(row, font, "On", RayTracingOption(true));
                             });
 
-                        graphics.spawn(TextBundle {
-                            text: Text::from_sections([TextSection::new(
-                                "Display Mode",
-                                TextStyle {
-                                    font: font.clone(),
-                                    font_size: 20.0,
-                                    color: Color::WHITE,
-                                },
-                            )]),
-                            ..default()
-                        });
+                        graphics.spawn((
+                            Text::new("Display Mode"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 20.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
 
                         graphics
-                            .spawn(NodeBundle {
-                                style: Style {
-                                    flex_direction: FlexDirection::Row,
-                                    column_gap: Val::Px(8.0),
-                                    ..default()
-                                },
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Row,
+                                column_gap: Val::Px(8.0),
                                 ..default()
                             })
                             .with_children(|row| {
@@ -793,27 +730,22 @@ fn spawn_settings_dialog(
                                 );
                             });
 
-                        graphics.spawn(TextBundle {
-                            text: Text::from_sections([TextSection::new(
-                                "Resolution",
-                                TextStyle {
-                                    font: font.clone(),
-                                    font_size: 20.0,
-                                    color: Color::WHITE,
-                                },
-                            )]),
-                            ..default()
-                        });
+                        graphics.spawn((
+                            Text::new("Resolution"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 20.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
 
                         graphics
-                            .spawn(NodeBundle {
-                                style: Style {
-                                    flex_direction: FlexDirection::Row,
-                                    column_gap: Val::Px(8.0),
-                                    row_gap: Val::Px(8.0),
-                                    flex_wrap: FlexWrap::Wrap,
-                                    ..default()
-                                },
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Row,
+                                column_gap: Val::Px(8.0),
+                                row_gap: Val::Px(8.0),
+                                flex_wrap: FlexWrap::Wrap,
                                 ..default()
                             })
                             .with_children(|row| {
@@ -830,63 +762,54 @@ fn spawn_settings_dialog(
 
                 content
                     .spawn((
-                        NodeBundle {
-                            style: Style {
-                                flex_direction: FlexDirection::Column,
-                                row_gap: Val::Px(10.0),
-                                ..default()
-                            },
-                            visibility: if settings_state.active_tab == SettingsTab::Gameplay {
-                                Visibility::Visible
-                            } else {
-                                Visibility::Hidden
-                            },
+                        Node {
+                            flex_direction: FlexDirection::Column,
+                            row_gap: Val::Px(10.0),
                             ..default()
                         },
+                        Visibility::from(if settings_state.active_tab == SettingsTab::Gameplay {
+                            Visibility::Visible
+                        } else {
+                            Visibility::Hidden
+                        }),
                         GameplayTabContent,
                     ))
                     .with_children(|gameplay| {
-                        gameplay.spawn(TextBundle {
-                            text: Text::from_sections([TextSection::new(
-                                "Gameplay settings coming soon.",
-                                TextStyle {
-                                    font: font.clone(),
-                                    font_size: 18.0,
-                                    color: Color::WHITE,
-                                },
-                            )]),
-                            ..default()
-                        });
+                        gameplay.spawn((
+                            Text::new("Gameplay settings coming soon."),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 18.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
                     });
             });
 
         dialog
             .spawn((
-                ButtonBundle {
-                    style: Style {
-                        width: Val::Px(120.0),
-                        padding: UiRect::all(Val::Px(10.0)),
-                        justify_content: JustifyContent::Center,
-                        align_items: AlignItems::Center,
-                        ..default()
-                    },
-                    background_color: Color::srgba(0.25, 0.25, 0.25, 0.9).into(),
+                Button,
+                Node {
+                    width: Val::Px(120.0),
+                    padding: UiRect::all(Val::Px(10.0)),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
                     ..default()
                 },
+                BackgroundColor(Color::srgba(0.25, 0.25, 0.25, 0.9)),
                 CloseSettingsButton,
             ))
-            .with_children(|button| {
-                button.spawn(TextBundle {
-                    text: Text::from_sections([TextSection::new(
-                        "Close",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 18.0,
-                            color: Color::WHITE,
-                        },
-                    )]),
-                    ..default()
-                });
+            .with_children(|button: &mut ChildBuilder| {
+                button.spawn((
+                    Text::new("Close"),
+                    TextFont {
+                        font: font.clone(),
+                        font_size: 18.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                ));
             });
     });
 
@@ -906,30 +829,26 @@ fn spawn_settings_tab_button(
 ) {
     parent
         .spawn((
-            ButtonBundle {
-                style: Style {
-                    padding: UiRect::axes(Val::Px(14.0), Val::Px(10.0)),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                background_color: Color::srgba(0.18, 0.18, 0.18, 0.9).into(),
+            Button,
+            Node {
+                padding: UiRect::axes(Val::Px(14.0), Val::Px(10.0)),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
                 ..default()
             },
+            BackgroundColor(Color::srgba(0.18, 0.18, 0.18, 0.9)),
             tab,
         ))
-        .with_children(|button| {
-            button.spawn(TextBundle {
-                text: Text::from_sections([TextSection::new(
-                    label,
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 18.0,
-                        color: Color::WHITE,
-                    },
-                )]),
-                ..default()
-            });
+        .with_children(|button: &mut ChildBuilder| {
+            button.spawn((
+                Text::new(label),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 18.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+            ));
         });
 }
 
@@ -941,30 +860,26 @@ fn spawn_graphics_option<T: Component + Copy + Send + Sync + 'static>(
 ) {
     parent
         .spawn((
-            ButtonBundle {
-                style: Style {
-                    padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                background_color: Color::srgba(0.2, 0.2, 0.2, 0.9).into(),
+            Button,
+            Node {
+                padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
                 ..default()
             },
+            BackgroundColor(Color::srgba(0.2, 0.2, 0.2, 0.9)),
             tag,
         ))
-        .with_children(|button| {
-            button.spawn(TextBundle {
-                text: Text::from_sections([TextSection::new(
-                    label,
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 16.0,
-                        color: Color::WHITE,
-                    },
-                )]),
-                ..default()
-            });
+        .with_children(|button: &mut ChildBuilder| {
+            button.spawn((
+                Text::new(label),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 16.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+            ));
         });
 }
 
@@ -1438,7 +1353,7 @@ fn process_input_characters(
     mut form_state: ResMut<MultiplayerFormState>,
     state: Res<PauseMenuState>,
     keys: Res<ButtonInput<KeyCode>>,
-    mut char_evr: EventReader<ReceivedCharacter>,
+    mut char_evr: EventReader<KeyboardInput>,
 ) {
     if !state.open {
         return;
@@ -1457,21 +1372,24 @@ fn process_input_characters(
     }
 
     for ev in char_evr.read() {
-        if ev.char.is_control() {
+        if !ev.state.is_pressed() {
             continue;
         }
 
-        if let Some(field) = form_state.active_field {
-            let target = get_field_value_mut(&mut form_state, field);
+        if let Key::Character(ch_str) = &ev.logical_key {
+            let ch = ch_str.chars().next().unwrap_or(' ');
+            if let Some(field) = form_state.active_field {
+                let target = get_field_value_mut(&mut form_state, field);
 
-            match field {
-                MultiplayerField::JoinPort => {
-                    if ev.char.is_ascii_digit() {
-                        target.push(ev.char);
+                match field {
+                    MultiplayerField::JoinPort => {
+                        if ch.is_ascii_digit() {
+                            target.push(ch);
+                        }
                     }
-                }
-                _ => {
-                    target.push(ev.char);
+                    _ => {
+                        target.push(ch);
+                    }
                 }
             }
         }
@@ -1518,7 +1436,7 @@ fn update_input_texts(
             value
         };
 
-        text.sections[0].value = display_value.to_string();
+        text.0 = display_value.to_string();
     }
 }
 
@@ -1550,31 +1468,27 @@ fn spawn_favorite_button(
     let label = format!("{}:{}", favorite.ip, favorite.port);
     parent
         .spawn((
-            ButtonBundle {
-                style: Style {
-                    width: Val::Percent(100.0),
-                    padding: UiRect::all(Val::Px(8.0)),
-                    justify_content: JustifyContent::FlexStart,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                background_color: Color::srgba(0.18, 0.18, 0.18, 0.9).into(),
+            Button,
+            Node {
+                width: Val::Percent(100.0),
+                padding: UiRect::all(Val::Px(8.0)),
+                justify_content: JustifyContent::FlexStart,
+                align_items: AlignItems::Center,
                 ..default()
             },
+            BackgroundColor(Color::srgba(0.18, 0.18, 0.18, 0.9)),
             FavoriteButton(index),
         ))
-        .with_children(|button| {
-            button.spawn(TextBundle {
-                text: Text::from_sections([TextSection::new(
-                    label,
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 16.0,
-                        color: Color::WHITE,
-                    },
-                )]),
-                ..default()
-            });
+        .with_children(|button: &mut ChildBuilder| {
+            button.spawn((
+                Text::new(label),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 16.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+            ));
         });
 }
 
@@ -1592,12 +1506,12 @@ fn handle_favorite_buttons(
             continue;
         }
 
-        if let Some(entry) = form_state.favorites.get(favorite.0) {
-            form_state.join_ip = entry.ip.clone();
-            form_state.join_port = entry.port.clone();
-            form_state.join_password = entry.password.clone();
+        if let Some(entry) = form_state.favorites.get(favorite.0).cloned() {
+            form_state.join_ip = entry.ip;
+            form_state.join_port = entry.port;
+            form_state.join_password = entry.password;
             form_state.active_field = None;
-            info!("Loaded favorite server {}:{}", entry.ip, entry.port);
+            info!("Loaded favorite server {}:{}", form_state.join_ip, form_state.join_port);
         }
     }
 }

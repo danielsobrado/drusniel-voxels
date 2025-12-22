@@ -3,12 +3,10 @@ use crate::chat::ChatState;
 use crate::menu::PauseMenuState;
 use crate::props::{Prop, PropAssets, PropConfig, PropType};
 use crate::voxel::types::VoxelType;
-use bevy::hierarchy::DespawnRecursiveExt;
-use bevy::input::keyboard::ReceivedCharacter;
 use bevy::prelude::*;
 use bevy::ui::{
-    AlignItems, ButtonBundle, FlexDirection, ImageBundle, JustifyContent, NodeBundle, Overflow,
-    PositionType, Style, TextBundle, TextSection, TextStyle, UiRect, Val,
+    AlignItems, FlexDirection, JustifyContent, Overflow,
+    PositionType, Val,
 };
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -194,7 +192,7 @@ pub fn handle_palette_input(
     pause_state: Res<PauseMenuState>,
     chat_state: Option<Res<ChatState>>,
     keys: Res<ButtonInput<KeyCode>>,
-    mut char_evr: EventReader<ReceivedCharacter>,
+    mut char_evr: EventReader<KeyboardInput>,
     mut commands: Commands,
 ) {
     if !palette.open || pause_state.open || chat_state.as_ref().map(|c| c.active).unwrap_or(false) {
@@ -216,8 +214,11 @@ pub fn handle_palette_input(
     }
 
     for ev in char_evr.read() {
-        if !ev.char.is_control() {
-            palette.search.push(ev.char);
+        if !ev.state.is_pressed() {
+            continue;
+        }
+        if let Key::Character(ch) = &ev.logical_key {
+            palette.search.push_str(ch);
             changed = true;
         }
     }
@@ -333,11 +334,11 @@ pub fn refresh_palette_ui(
     }
 
     if let Ok(mut search_text) = search_query.get_single_mut() {
-        search_text.sections[0].value = format!("Search: {}", palette.search);
+        search_text.0 = format!("Search: {}", palette.search);
     }
 
     if let Ok(mut selection_text) = selection_query.get_single_mut() {
-        selection_text.sections[0].value = match &palette.active_selection {
+        selection_text.0 = match &palette.active_selection {
             Some(PlacementSelection::Voxel(v)) => format!("Selected: {:?}", v),
             Some(PlacementSelection::Prop { id, prop_type }) => {
                 format!("Selected: {} ({:?})", id, prop_type)
@@ -379,51 +380,45 @@ pub fn refresh_palette_ui(
                 .map(|sel| sel == &item.selection)
                 .unwrap_or(false);
 
-            commands.entity(list_entity).with_children(|list| {
+            commands.entity(list_entity).with_children(|list: &mut ChildBuilder| {
                 list.spawn((
-                    ButtonBundle {
-                        style: Style {
-                            width: Val::Percent(100.0),
-                            padding: UiRect::axes(Val::Px(10.0), Val::Px(8.0)),
-                            margin: UiRect::bottom(Val::Px(6.0)),
-                            flex_direction: FlexDirection::Column,
-                            row_gap: Val::Px(4.0),
-                            ..default()
-                        },
-                        background_color: if is_selected {
-                            Color::srgba(0.25, 0.4, 0.7, 0.8).into()
-                        } else {
-                            Color::srgba(0.15, 0.15, 0.18, 0.85).into()
-                        },
+                    Button,
+                    Node {
+                        width: Val::Percent(100.0),
+                        padding: UiRect::axes(Val::Px(10.0), Val::Px(8.0)),
+                        margin: UiRect::bottom(Val::Px(6.0)),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(4.0),
                         ..default()
                     },
+                    BackgroundColor(if is_selected {
+                        Color::srgba(0.25, 0.4, 0.7, 0.8)
+                    } else {
+                        Color::srgba(0.15, 0.15, 0.18, 0.85)
+                    }),
                     PaletteItemButton(*index),
                 ))
-                .with_children(|button| {
-                    button.spawn(TextBundle {
-                        text: Text::from_sections([TextSection::new(
-                            &item.label,
-                            TextStyle {
-                                font: font.clone(),
-                                font_size: 16.0,
-                                color: Color::WHITE,
-                            },
-                        )]),
-                        ..default()
-                    });
+                .with_children(|button: &mut ChildBuilder| {
+                    button.spawn((
+                        Text::new(&item.label),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 16.0,
+                            ..default()
+                        },
+                        TextColor(Color::WHITE),
+                    ));
 
                     if !item.tags.is_empty() {
-                        button.spawn(TextBundle {
-                            text: Text::from_sections([TextSection::new(
-                                format!("Tags: {}", item.tags.join(", ")),
-                                TextStyle {
-                                    font: font.clone(),
-                                    font_size: 12.0,
-                                    color: Color::srgba(0.8, 0.8, 0.8, 0.9),
-                                },
-                            )]),
-                            ..default()
-                        });
+                        button.spawn((
+                            Text::new(format!("Tags: {}", item.tags.join(", "))),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 12.0,
+                                ..default()
+                            },
+                            TextColor(Color::srgba(0.8, 0.8, 0.8, 0.9)),
+                        ));
                     }
                 });
             });
@@ -441,9 +436,9 @@ pub fn refresh_palette_ui(
                 bookmark.name, bookmark.position[0], bookmark.position[1], bookmark.position[2]
             );
 
-            commands.entity(list_entity).with_children(|list| {
-                list.spawn(NodeBundle {
-                    style: Style {
+            commands.entity(list_entity).with_children(|list: &mut ChildBuilder| {
+                list.spawn((
+                    Node {
                         flex_direction: FlexDirection::Row,
                         justify_content: JustifyContent::SpaceBetween,
                         align_items: AlignItems::Center,
@@ -452,70 +447,59 @@ pub fn refresh_palette_ui(
                         margin: UiRect::bottom(Val::Px(4.0)),
                         ..default()
                     },
-                    background_color: Color::srgba(0.12, 0.12, 0.15, 0.8).into(),
-                    ..default()
-                })
-                .with_children(|row| {
-                    row.spawn(TextBundle {
-                        text: Text::from_sections([TextSection::new(
-                            name,
-                            TextStyle {
-                                font: font.clone(),
-                                font_size: 12.0,
-                                color: Color::WHITE,
-                            },
-                        )]),
-                        ..default()
-                    });
-
+                    BackgroundColor(Color::srgba(0.12, 0.12, 0.15, 0.8)),
+                ))
+                .with_children(|row: &mut ChildBuilder| {
                     row.spawn((
-                        ButtonBundle {
-                            style: Style {
-                                padding: UiRect::axes(Val::Px(8.0), Val::Px(6.0)),
-                                ..default()
-                            },
-                            background_color: Color::srgba(0.2, 0.35, 0.2, 0.85).into(),
+                        Text::new(name),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 12.0,
                             ..default()
                         },
+                        TextColor(Color::WHITE),
+                    ));
+
+                    row.spawn((
+                        Button,
+                        Node {
+                            padding: UiRect::axes(Val::Px(8.0), Val::Px(6.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.2, 0.35, 0.2, 0.85)),
                         BookmarkTeleportButton(index),
                     ))
-                    .with_children(|button| {
-                        button.spawn(TextBundle {
-                            text: Text::from_sections([TextSection::new(
-                                "Teleport",
-                                TextStyle {
-                                    font: font.clone(),
-                                    font_size: 12.0,
-                                    color: Color::WHITE,
-                                },
-                            )]),
-                            ..default()
-                        });
+                    .with_children(|button: &mut ChildBuilder| {
+                        button.spawn((
+                            Text::new("Teleport"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 12.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
                     });
 
                     row.spawn((
-                        ButtonBundle {
-                            style: Style {
-                                padding: UiRect::axes(Val::Px(8.0), Val::Px(6.0)),
-                                ..default()
-                            },
-                            background_color: Color::srgba(0.35, 0.15, 0.15, 0.85).into(),
+                        Button,
+                        Node {
+                            padding: UiRect::axes(Val::Px(8.0), Val::Px(6.0)),
                             ..default()
                         },
+                        BackgroundColor(Color::srgba(0.35, 0.15, 0.15, 0.85)),
                         BookmarkDeleteButton(index),
                     ))
-                    .with_children(|button| {
-                        button.spawn(TextBundle {
-                            text: Text::from_sections([TextSection::new(
-                                "Delete",
-                                TextStyle {
-                                    font: font.clone(),
-                                    font_size: 12.0,
-                                    color: Color::WHITE,
-                                },
-                            )]),
-                            ..default()
-                        });
+                    .with_children(|button: &mut ChildBuilder| {
+                        button.spawn((
+                            Text::new("Delete"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 12.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
                     });
                 });
             });
@@ -585,144 +569,117 @@ fn spawn_palette_ui(
 
     let root = commands
         .spawn((
-            NodeBundle {
-                style: Style {
-                    position_type: PositionType::Absolute,
-                    top: Val::Px(20.0),
-                    right: Val::Px(20.0),
-                    width: Val::Px(360.0),
-                    max_height: Val::Px(640.0),
-                    padding: UiRect::all(Val::Px(12.0)),
-                    row_gap: Val::Px(10.0),
-                    flex_direction: FlexDirection::Column,
-                    ..default()
-                },
-                background_color: Color::srgba(0.05, 0.05, 0.07, 0.9).into(),
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(20.0),
+                right: Val::Px(20.0),
+                width: Val::Px(360.0),
+                max_height: Val::Px(640.0),
+                padding: UiRect::all(Val::Px(12.0)),
+                row_gap: Val::Px(10.0),
+                flex_direction: FlexDirection::Column,
                 ..default()
             },
+            BackgroundColor(Color::srgba(0.05, 0.05, 0.07, 0.9)),
             PaletteRoot,
         ))
-        .with_children(|root| {
-            root.spawn(TextBundle {
-                text: Text::from_sections([TextSection::new(
-                    "Placement Palette (Tab to close)",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 18.0,
-                        color: Color::WHITE,
-                    },
-                )]),
-                ..default()
-            });
-
+        .with_children(|root: &mut ChildBuilder| {
             root.spawn((
-                TextBundle {
-                    text: Text::from_sections([TextSection::new(
-                        "Search:",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 14.0,
-                            color: Color::srgba(0.85, 0.85, 0.85, 1.0),
-                        },
-                    )]),
+                Text::new("Placement Palette (Tab to close)"),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 18.0,
                     ..default()
                 },
+                TextColor(Color::WHITE),
+            ));
+
+            root.spawn((
+                Text::new("Search:"),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(Color::srgba(0.85, 0.85, 0.85, 1.0)),
                 PaletteSearchText,
             ));
 
             root.spawn((
-                TextBundle {
-                    text: Text::from_sections([TextSection::new(
-                        "Selected: (none)",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 14.0,
-                            color: Color::srgba(0.85, 0.85, 0.85, 1.0),
-                        },
-                    )]),
+                Text::new("Selected: (none)"),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 14.0,
                     ..default()
                 },
+                TextColor(Color::srgba(0.85, 0.85, 0.85, 1.0)),
                 PaletteSelectionText,
             ));
 
             root.spawn((
-                ButtonBundle {
-                    style: Style {
-                        padding: UiRect::axes(Val::Px(10.0), Val::Px(8.0)),
-                        ..default()
-                    },
-                    background_color: Color::srgba(0.2, 0.3, 0.2, 0.9).into(),
+                Button,
+                Node {
+                    padding: UiRect::axes(Val::Px(10.0), Val::Px(8.0)),
                     ..default()
                 },
+                BackgroundColor(Color::srgba(0.2, 0.3, 0.2, 0.9)),
                 SaveBookmarkButton,
             ))
-            .with_children(|button| {
-                button.spawn(TextBundle {
-                    text: Text::from_sections([TextSection::new(
-                        "Bookmark current position (uses search text for name)",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 14.0,
-                            color: Color::WHITE,
-                        },
-                    )]),
-                    ..default()
-                });
-            });
-
-            root.spawn(TextBundle {
-                text: Text::from_sections([TextSection::new(
-                    "Bookmarks:",
-                    TextStyle {
+            .with_children(|button: &mut ChildBuilder| {
+                button.spawn((
+                    Text::new("Bookmark current position (uses search text for name)"),
+                    TextFont {
                         font: font.clone(),
                         font_size: 14.0,
-                        color: Color::srgba(0.85, 0.85, 0.85, 1.0),
+                        ..default()
                     },
-                )]),
-                ..default()
+                    TextColor(Color::WHITE),
+                ));
             });
 
             root.spawn((
-                NodeBundle {
-                    style: Style {
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(4.0),
-                        max_height: Val::Px(160.0),
-                        overflow: Overflow::clip_y(),
-                        ..default()
-                    },
-                    background_color: Color::srgba(0.08, 0.08, 0.1, 0.8).into(),
+                Text::new("Bookmarks:"),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 14.0,
                     ..default()
                 },
+                TextColor(Color::srgba(0.85, 0.85, 0.85, 1.0)),
+            ));
+
+            root.spawn((
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(4.0),
+                    max_height: Val::Px(160.0),
+                    overflow: Overflow::clip_y(),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.08, 0.08, 0.1, 0.8)),
                 BookmarkList,
             ));
 
             root.spawn((
-                NodeBundle {
-                    style: Style {
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(4.0),
-                        max_height: Val::Px(520.0),
-                        overflow: Overflow::clip_y(),
-                        ..default()
-                    },
-                    background_color: Color::srgba(0.1, 0.1, 0.12, 0.8).into(),
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(4.0),
+                    max_height: Val::Px(520.0),
+                    overflow: Overflow::clip_y(),
                     ..default()
                 },
+                BackgroundColor(Color::srgba(0.1, 0.1, 0.12, 0.8)),
                 PaletteList,
             ));
 
-            root.spawn(TextBundle {
-                text: Text::from_sections([TextSection::new(
-                    "Right click while editing to place props. Voxels use the held block.",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 12.0,
-                        color: Color::srgba(0.8, 0.8, 0.8, 0.8),
-                    },
-                )]),
-                ..default()
-            });
+            root.spawn((
+                Text::new("Right click while editing to place props. Voxels use the held block."),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 12.0,
+                    ..default()
+                },
+                TextColor(Color::srgba(0.8, 0.8, 0.8, 0.8)),
+            ));
         })
         .id();
 

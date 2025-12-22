@@ -37,9 +37,9 @@ pub fn detect_graphics_capabilities(
         capabilities.adapter_name = Some(adapter_info.name.clone());
         capabilities.taa_supported = hdr_filterable && sdr_filterable;
         capabilities.ray_tracing_supported = features
-            .contains(bevy::render::settings::WgpuFeatures::RAY_QUERY)
+            .contains(bevy::render::settings::WgpuFeatures::EXPERIMENTAL_RAY_QUERY)
             && features
-                .contains(bevy::render::settings::WgpuFeatures::RAY_TRACING_ACCELERATION_STRUCTURE);
+                .contains(bevy::render::settings::WgpuFeatures::EXPERIMENTAL_RAY_TRACING_ACCELERATION_STRUCTURE);
 
         info!(
             adapter = %adapter_info.name,

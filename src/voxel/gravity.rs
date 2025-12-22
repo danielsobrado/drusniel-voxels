@@ -40,7 +40,7 @@ fn gravity_system(
 ) {
     state.timer.tick(time.delta());
 
-    if !state.timer.finished() {
+    if !state.timer.is_finished() {
         return;
     }
 
