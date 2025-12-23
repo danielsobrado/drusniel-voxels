@@ -27,3 +27,32 @@
 
 ![V0.1 Preview](docs/images/V0.1.jpg)
 
+## Controls
+
+### General
+*   **Escape**: Toggle Pause Menu / Close Chat
+*   **M**: Toggle Map Overlay
+*   **Shift + M**: Toggle Edit Mode
+*   **G**: Print Debug Voxel Info (Console Log)
+
+### Movement
+*   **W / A / S / D**: Move Forward, Left, Back, Right
+*   **Space**: Jump (Walk Mode) / Fly Up (Fly Mode)
+*   **Left Shift**: Sprint (Walk Mode) / Fly Down (Fly Mode)
+*   **Left Ctrl**: Turbo Speed (Fly Mode)
+*   **Tab**: Toggle Fly/Walk Mode
+*   **R**: Reset Position to Spawn
+
+### Interaction
+*   **Left Click**: Break Block / Attack Entity
+*   **Right Click**: Place Block
+
+### Edit Mode (Toggle with Shift + M)
+*   **Left Click + Drag**: Move Block
+*   **Q / E** or **Mouse Wheel**: Rotate Dragged Block
+*   **Delete**: Toggle Delete Mode
+    *   **Left Click**: Delete Block (while in Delete Mode)
+
+### Chat
+*   **Ctrl + A**: Open Chat
+*   **Enter**: Send Message
