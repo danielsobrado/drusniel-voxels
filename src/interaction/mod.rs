@@ -7,7 +7,7 @@ use crate::voxel::world::VoxelWorld;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
-mod palette;
+pub mod palette;
 
 /// Component to mark the block highlight entity
 #[derive(Component)]
@@ -1219,6 +1219,12 @@ impl Plugin for InteractionPlugin {
                     palette::handle_palette_item_click,
                     delete_block_in_edit_mode,
                     update_drag_rotation,
+                )
+                    .run_if(|state: Res<PauseMenuState>| !state.open),
+            )
+            .add_systems(
+                Update,
+                (
                     finish_dragging_block,
                     palette::place_prop_from_palette,
                     palette::persist_bookmarks,

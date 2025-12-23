@@ -1,0 +1,566 @@
+    Checking voxel_builder v0.1.0 (C:\Development\drusniel-voxels)
+error[E0432]: unresolved import `bevy::hierarchy`
+  --> src\interaction\palette.rs:12:11
+   |
+12 | use bevy::hierarchy::DespawnRecursiveExt;
+   |           ^^^^^^^^^ could not find `hierarchy` in `bevy`
+
+error[E0432]: unresolved import `bevy::hierarchy`
+ --> src\map.rs:5:11
+  |
+5 | use bevy::hierarchy::DespawnRecursiveExt;
+  |           ^^^^^^^^^ could not find `hierarchy` in `bevy`
+
+error[E0432]: unresolved import `bevy::hierarchy`
+ --> src\menu.rs:9:5
+  |
+9 |     hierarchy::DespawnRecursiveExt,
+  |     ^^^^^^^^^ could not find `hierarchy` in `bevy`
+
+error[E0412]: cannot find type `ChildBuilder` in this scope
+   --> src\interaction\palette.rs:403:46
+    |
+403 |                 .with_children(|button: &mut ChildBuilder| {
+    |                                              ^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `ChildBuilder` in this scope
+   --> src\interaction\palette.rs:474:50
+    |
+474 |                     .with_children(|button: &mut ChildBuilder| {
+    |                                                  ^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `ChildBuilder` in this scope
+   --> src\interaction\palette.rs:495:50
+    |
+495 |                     .with_children(|button: &mut ChildBuilder| {
+    |                                                  ^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `ChildBuilder` in this scope
+   --> src\interaction\palette.rs:630:42
+    |
+630 |             .with_children(|button: &mut ChildBuilder| {
+    |                                          ^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `Style` in this scope
+   --> src\map.rs:165:34
+    |
+165 |     mut marker_query: Query<&mut Style, With<MapPlayerMarker>>,
+    |                                  ^^^^^ not found in this scope
+    |
+help: you might be missing a type parameter
+    |
+162 | fn update_player_marker<Style>(
+    |                        +++++++
+
+error[E0422]: cannot find struct, variant or union type `ImageSamplerDescriptor` in this scope
+   --> src\map.rs:256:46
+    |
+256 |     image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+    |                                              ^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `ChildBuilder` in this scope
+   --> src\menu.rs:299:47
+    |
+299 |                     .with_children(|row: &mut ChildBuilder| {
+    |                                               ^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `ChildBuilder` in this scope
+   --> src\menu.rs:431:18
+    |
+431 |     parent: &mut ChildBuilder,
+    |                  ^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `ChildBuilder` in this scope
+   --> src\menu.rs:443:38
+    |
+443 |         .with_children(|column: &mut ChildBuilder| {
+    |                                      ^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `ChildBuilder` in this scope
+   --> src\menu.rs:467:45
+    |
+467 |                 .with_children(|input: &mut ChildBuilder| {
+    |                                             ^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `ChildBuilder` in this scope
+   --> src\menu.rs:483:18
+    |
+483 |     parent: &mut ChildBuilder,
+    |                  ^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `ChildBuilder` in this scope
+   --> src\menu.rs:501:38
+    |
+501 |         .with_children(|button: &mut ChildBuilder| {
+    |                                      ^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `ChildBuilder` in this scope
+   --> src\menu.rs:799:42
+    |
+799 |             .with_children(|button: &mut ChildBuilder| {
+    |                                          ^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `ChildBuilder` in this scope
+   --> src\menu.rs:821:18
+    |
+821 |     parent: &mut ChildBuilder,
+    |                  ^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `ChildBuilder` in this scope
+   --> src\menu.rs:838:38
+    |
+838 |         .with_children(|button: &mut ChildBuilder| {
+    |                                      ^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `ChildBuilder` in this scope
+   --> src\menu.rs:852:18
+    |
+852 |     parent: &mut ChildBuilder,
+    |                  ^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `ChildBuilder` in this scope
+   --> src\menu.rs:869:38
+    |
+869 |         .with_children(|button: &mut ChildBuilder| {
+    |                                      ^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `ChildBuilder` in this scope
+    --> src\menu.rs:1459:18
+     |
+1459 |     parent: &mut ChildBuilder,
+     |                  ^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `ChildBuilder` in this scope
+    --> src\menu.rs:1478:38
+     |
+1478 |         .with_children(|button: &mut ChildBuilder| {
+     |                                      ^^^^^^^^^^^^ not found in this scope
+
+error[E0603]: module `palette` is private
+  --> src\camera\controller.rs:1:25
+   |
+ 1 | use crate::interaction::palette::PlacementPaletteState;
+   |                         ^^^^^^^ private module
+   |
+note: the module `palette` is defined here
+  --> src\interaction\mod.rs:10:1
+   |
+10 | mod palette;
+   | ^^^^^^^^^^^^
+
+warning: unused import: `PositionType`
+  --> src\menu.rs:12:59
+   |
+12 |     AlignItems, AlignSelf, FlexDirection, JustifyContent, PositionType,
+   |                                                           ^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `crate::constants::CHUNK_SIZE`
+ --> src\vegetation\mod.rs:4:5
+  |
+4 | use crate::constants::CHUNK_SIZE;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::voxel::gravity::GravityPlugin`
+ --> src\voxel\plugin.rs:6:5
+  |
+6 | use crate::voxel::gravity::GravityPlugin;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::voxel::chunk::Chunk`
+ --> src\voxel\gravity.rs:4:5
+  |
+4 | use crate::voxel::chunk::Chunk;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated type alias `bevy::prelude::EventReader`: Renamed to `MessageReader`.
+   --> src\camera\controller.rs:147:23
+    |
+147 |     mut mouse_motion: EventReader<MouseMotion>,
+    |                       ^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated type alias `bevy::prelude::EventReader`: Renamed to `MessageReader`.
+   --> src\chat.rs:136:19
+    |
+136 |     mut char_evr: EventReader<KeyboardInput>,
+    |                   ^^^^^^^^^^^
+
+warning: use of deprecated type alias `bevy::prelude::EventReader`: Renamed to `MessageReader`.
+   --> src\interaction\mod.rs:503:22
+    |
+503 |     mut mouse_wheel: EventReader<MouseWheel>,
+    |                      ^^^^^^^^^^^
+
+warning: use of deprecated type alias `bevy::prelude::EventReader`: Renamed to `MessageReader`.
+   --> src\interaction\palette.rs:197:19
+    |
+197 |     mut char_evr: EventReader<KeyboardInput>,
+    |                   ^^^^^^^^^^^
+
+warning: use of deprecated type alias `bevy::prelude::EventReader`: Renamed to `MessageReader`.
+    --> src\menu.rs:1352:19
+     |
+1352 |     mut char_evr: EventReader<KeyboardInput>,
+     |                   ^^^^^^^^^^^
+
+error[E0277]: `Msaa` is not a `Resource`
+   --> src\camera\controller.rs:109:34
+    |
+109 |         commands.insert_resource(Msaa::Off);
+    |                  --------------- ^^^^^^^^^ invalid `Resource`
+    |                  |
+    |                  required by a bound introduced by this call
+    |
+    = help: the trait `bevy::prelude::Resource` is not implemented for `Msaa`
+    = note: consider annotating `Msaa` with `#[derive(Resource)]`
+    = help: the following other types implement trait `bevy::prelude::Resource`:
+              AccessibilityRequested
+              AccumulatedMouseMotion
+              AccumulatedMouseScroll
+              AppTypeRegistry
+              AssetProcessor
+              AssetSourceBuilders
+              AtmosphereSamplers
+              AtmosphereTransforms
+            and 304 others
+note: required by a bound in `bevy::prelude::Commands::<'w, 's>::insert_resource`
+   --> C:\Users\daniel\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_ecs-0.17.3\src\system\commands\mod.rs:840:31
+    |
+840 |     pub fn insert_resource<R: Resource>(&mut self, resource: R) {
+    |                               ^^^^^^^^ required by this bound in `Commands::<'w, 's>::insert_resource`
+
+error[E0599]: no method named `despawn_descendants` found for struct `EntityCommands<'a>` in the current scope
+   --> src\interaction\palette.rs:353:38
+    |
+353 |         commands.entity(list_entity).despawn_descendants();
+    |                                      ^^^^^^^^^^^^^^^^^^^ method not found in `EntityCommands<'_>`
+
+error[E0599]: no method named `despawn_descendants` found for struct `EntityCommands<'a>` in the current scope
+   --> src\interaction\palette.rs:431:38
+    |
+431 |         commands.entity(list_entity).despawn_descendants();
+    |                                      ^^^^^^^^^^^^^^^^^^^ method not found in `EntityCommands<'_>`
+
+error[E0308]: mismatched types
+   --> src\interaction\palette.rs:540:9
+    |
+540 |     let Some((block_pos, normal)) = (targeted.position, targeted.normal) else {
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^   ------------------------------------ this expression has type `(std::option::Option<bevy::prelude::IVec3>, std::option::Option<bevy::prelude::IVec3>)`
+    |         |
+    |         expected `(Option<IVec3>, Option<IVec3>)`, found `Option<_>`
+    |
+    = note: expected tuple `(std::option::Option<bevy::prelude::IVec3>, std::option::Option<bevy::prelude::IVec3>)`
+                found enum `std::option::Option<_>`
+
+error[E0599]: no method named `despawn_recursive` found for struct `EntityCommands<'a>` in the current scope
+   --> src\interaction\palette.rs:693:33
+    |
+693 |         commands.entity(entity).despawn_recursive();
+    |                                 ^^^^^^^^^^^^^^^^^ method not found in `EntityCommands<'_>`
+
+error[E0599]: no method named `run_if` found for tuple `(..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ...)` in the current scope
+    --> src\interaction\mod.rs:1235:22
+     |
+1209 | /                 (
+1210 | |                     update_targeted_block,
+1211 | |                     update_targeted_entity,
+1212 | |                     palette::initialize_palette_items,
+...    |
+1235 | |                     .run_if(|state: Res<PauseMenuState>| !state.open),
+     | |                     -^^^^^^ method not found in `(..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ..., ...)`
+     | |_____________________|
+     |
+     |
+     = note: the full name for the type has been written to 'C:\Development\drusniel-voxels\target\debug\deps\voxel_builder-85367c1fd5a1efda.long-type-13857509696527307831.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+help: some of the expressions' fields have a method of the same name
+     |
+1235 |                     .0.run_if(|state: Res<PauseMenuState>| !state.open),
+     |                      ++
+1235 |                     .1.run_if(|state: Res<PauseMenuState>| !state.open),
+     |                      ++
+1235 |                     .10.run_if(|state: Res<PauseMenuState>| !state.open),
+     |                      +++
+1235 |                     .11.run_if(|state: Res<PauseMenuState>| !state.open),
+     |                      +++
+     = and 20 other candidates
+
+error[E0599]: no method named `despawn_recursive` found for struct `EntityCommands<'a>` in the current scope
+  --> src\map.rs:60:37
+   |
+60 |             commands.entity(entity).despawn_recursive();
+   |                                     ^^^^^^^^^^^^^^^^^ method not found in `EntityCommands<'_>`
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+   --> src\map.rs:245:21
+    |
+245 |       let mut image = Image::new_fill(
+    |  _____________________^^^^^^^^^^^^^^^-
+246 | |         Extent3d {
+247 | |             width,
+248 | |             height,
+...   |
+253 | |         TextureFormat::Rgba8UnormSrgb,
+254 | |     );
+    | |_____- argument #5 of type `RenderAssetUsages` is missing
+    |
+note: associated function defined here
+   --> C:\Users\daniel\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_image-0.17.3\src\image.rs:936:12
+    |
+936 |     pub fn new_fill(
+    |            ^^^^^^^^
+help: provide the argument
+    |
+245 |     let mut image = Image::new_fill(
+...
+253 |         TextureFormat::Rgba8UnormSrgb,
+254 ~         /* RenderAssetUsages */,
+255 ~     );
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `ImageSampler`
+   --> src\map.rs:256:21
+    |
+256 |     image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+    |                     ^^^^^^^^^^^^
+    |                     |
+    |                     use of undeclared type `ImageSampler`
+    |                     help: a trait with a similar name exists: `ShapeSample`
+
+error[E0433]: failed to resolve: use of undeclared type `ImageAddressMode`
+   --> src\map.rs:257:25
+    |
+257 |         address_mode_u: ImageAddressMode::ClampToEdge,
+    |                         ^^^^^^^^^^^^^^^^ use of undeclared type `ImageAddressMode`
+
+error[E0433]: failed to resolve: use of undeclared type `ImageAddressMode`
+   --> src\map.rs:258:25
+    |
+258 |         address_mode_v: ImageAddressMode::ClampToEdge,
+    |                         ^^^^^^^^^^^^^^^^ use of undeclared type `ImageAddressMode`
+
+error[E0433]: failed to resolve: use of undeclared type `ImageAddressMode`
+   --> src\map.rs:259:25
+    |
+259 |         address_mode_w: ImageAddressMode::ClampToEdge,
+    |                         ^^^^^^^^^^^^^^^^ use of undeclared type `ImageAddressMode`
+
+error[E0433]: failed to resolve: use of undeclared type `ImageFilterMode`
+   --> src\map.rs:260:21
+    |
+260 |         mag_filter: ImageFilterMode::Nearest,
+    |                     ^^^^^^^^^^^^^^^ use of undeclared type `ImageFilterMode`
+
+error[E0433]: failed to resolve: use of undeclared type `ImageFilterMode`
+   --> src\map.rs:261:21
+    |
+261 |         min_filter: ImageFilterMode::Nearest,
+    |                     ^^^^^^^^^^^^^^^ use of undeclared type `ImageFilterMode`
+
+error[E0433]: failed to resolve: use of undeclared type `ImageFilterMode`
+   --> src\map.rs:262:24
+    |
+262 |         mipmap_filter: ImageFilterMode::Nearest,
+    |                        ^^^^^^^^^^^^^^^ use of undeclared type `ImageFilterMode`
+
+error[E0308]: `match` arms have incompatible types
+    --> src\menu.rs:1174:36
+     |
+1172 |       window.mode = match settings_state.display_mode {
+     |  ___________________-
+1173 | |         DisplayMode::Bordered | DisplayMode::Borderless => WindowMode::Windowed,
+     | |                                                            -------------------- this is found to be of type `WindowMode`
+1174 | |         DisplayMode::Fullscreen => WindowMode::Fullscreen,
+     | |                                    ^^^^^^^^^^^^^^^^^^^^^^ expected `WindowMode`, found enum constructor
+1175 | |     };
+     | |_____- `match` arms have incompatible types
+     |
+     = note:          expected enum `WindowMode`
+             found enum constructor `fn(MonitorSelection, VideoModeSelection) -> WindowMode {Fullscreen}`
+help: use parentheses to construct this tuple variant
+     |
+1174 |         DisplayMode::Fullscreen => WindowMode::Fullscreen(/* MonitorSelection */, /* VideoModeSelection */),
+     |                                                          ++++++++++++++++++++++++++++++++++++++++++++++++++
+
+error[E0308]: arguments to this function are incorrect
+    --> src\menu.rs:1177:25
+     |
+1177 |     window.resolution = WindowResolution::new(
+     |                         ^^^^^^^^^^^^^^^^^^^^^
+1178 |         settings_state.resolution.x as f32,
+     |         ---------------------------------- expected `u32`, found `f32`
+1179 |         settings_state.resolution.y as f32,
+     |         ---------------------------------- expected `u32`, found `f32`
+     |
+note: associated function defined here
+    --> C:\Users\daniel\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_window-0.17.3\src\window.rs:912:12
+     |
+ 912 |     pub fn new(physical_width: u32, physical_height: u32) -> Self {
+     |            ^^^
+
+error[E0599]: no method named `despawn_recursive` found for struct `EntityCommands<'a>` in the current scope
+    --> src\menu.rs:1185:33
+     |
+1185 |         commands.entity(entity).despawn_recursive();
+     |                                 ^^^^^^^^^^^^^^^^^ method not found in `EntityCommands<'_>`
+
+error[E0609]: no field `translation` on type `std::result::Result<&bevy::prelude::Transform, QuerySingleError>`
+   --> src\voxel\plugin.rs:744:39
+    |
+744 |     let camera_pos = camera_transform.translation;
+    |                                       ^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+744 |     let camera_pos = camera_transform.unwrap().translation;
+    |                                       +++++++++
+
+warning: variable `surfaces_found` is assigned to, but never used
+   --> src\entity\wolf.rs:127:21
+    |
+127 |                 let mut surfaces_found = 0;
+    |                     ^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_surfaces_found` instead
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `surfaces_found` is never read
+   --> src\entity\wolf.rs:139:29
+    |
+139 | ...                   surfaces_found += 1;
+    |                       ^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `base_index`
+   --> src\entity\wolf.rs:242:9
+    |
+242 |     let base_index = positions.len() as u32;
+    |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_base_index`
+
+warning: variable `mesh_uv_missing` is assigned to, but never used
+  --> src\entity\rabbit.rs:80:17
+   |
+80 |             let mut mesh_uv_missing = false;
+   |                 ^^^^^^^^^^^^^^^^^^^
+   |
+   = note: consider using `_mesh_uv_missing` instead
+
+warning: unused variable: `handle_id`
+   --> src\entity\rabbit.rs:106:21
+    |
+106 |                 let handle_id = mat_handle.id();
+    |                     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_handle_id`
+
+warning: unused variable: `height`
+   --> src\entity\rabbit.rs:170:41
+    |
+170 | ...                   let height = max_y - min_y;
+    |                           ^^^^^^ help: if this is intentional, prefix it with an underscore: `_height`
+
+warning: value assigned to `mesh_uv_missing` is never read
+  --> src\entity\rabbit.rs:86:25
+   |
+86 |                         mesh_uv_missing = true;
+   |                         ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: variable `rejected_area` is assigned to, but never used
+   --> src\vegetation\mod.rs:254:9
+    |
+254 |     let mut rejected_area = 0;
+    |         ^^^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_rejected_area` instead
+
+warning: variable `rejected_normal` is assigned to, but never used
+   --> src\vegetation\mod.rs:255:9
+    |
+255 |     let mut rejected_normal = 0;
+    |         ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_rejected_normal` instead
+
+warning: variable `accepted` is assigned to, but never used
+   --> src\vegetation\mod.rs:256:9
+    |
+256 |     let mut accepted = 0;
+    |         ^^^^^^^^^^^^
+    |
+    = note: consider using `_accepted` instead
+
+warning: unused variable: `seed_base`
+   --> src\vegetation\mod.rs:310:13
+    |
+310 |         let seed_base = seed_base_bits as i32;
+    |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_seed_base`
+
+warning: value assigned to `rejected_area` is never read
+   --> src\vegetation\mod.rs:281:13
+    |
+281 |             rejected_area += 1;
+    |             ^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `rejected_normal` is never read
+   --> src\vegetation\mod.rs:288:13
+    |
+288 |             rejected_normal += 1;
+    |             ^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `accepted` is never read
+   --> src\vegetation\mod.rs:292:9
+    |
+292 |         accepted += 1;
+    |         ^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: unused variable: `centroid`
+   --> src\voxel\meshing.rs:858:17
+    |
+858 |             let centroid = (local0 + local1 + local2) / 3.0;
+    |                 ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_centroid`
+
+warning: unused variable: `avg_normal`
+   --> src\voxel\meshing.rs:886:17
+    |
+886 |             let avg_normal = if avg_len > 0.001 {
+    |                 ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_avg_normal`
+
+warning: variable `water_count` is assigned to, but never used
+   --> src\voxel\plugin.rs:400:13
+    |
+400 |         let mut water_count = 0u32;
+    |             ^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_water_count` instead
+
+warning: value assigned to `water_count` is never read
+   --> src\voxel\plugin.rs:548:45
+    |
+548 |                         VoxelType::Water => water_count += 1,
+    |                                             ^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `water_count` is never read
+   --> src\voxel\plugin.rs:437:29
+    |
+437 | ...                   water_count += 1;
+    |                       ^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+Some errors have detailed explanations: E0061, E0277, E0308, E0412, E0422, E0432, E0433, E0599, E0603...
+For more information about an error, try `rustc --explain E0061`.
+warning: `voxel_builder` (lib) generated 28 warnings
+error: could not compile `voxel_builder` (lib) due to 42 previous errors; 28 warnings emitted

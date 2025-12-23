@@ -4,6 +4,7 @@ use crate::menu::PauseMenuState;
 use crate::props::{Prop, PropAssets, PropConfig, PropType};
 use crate::voxel::types::VoxelType;
 use bevy::prelude::*;
+use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::ui::{
     AlignItems, FlexDirection, JustifyContent, Overflow,
     PositionType, Val,
@@ -267,7 +268,7 @@ pub fn handle_bookmark_buttons(
 
     for interaction in save_buttons.iter_mut() {
         if *interaction == Interaction::Pressed {
-            if let Ok((transform, camera)) = camera_read_query.get_single() {
+            if let Ok((transform, camera)) = camera_read_query.single() {
                 let name = if palette.search.is_empty() {
                     format!("Bookmark {}", store.bookmarks.len() + 1)
                 } else {
@@ -289,7 +290,7 @@ pub fn handle_bookmark_buttons(
     for (interaction, BookmarkTeleportButton(index)) in teleport_buttons.iter_mut() {
         if *interaction == Interaction::Pressed {
             if let Some(bookmark) = store.bookmarks.get(*index).cloned() {
-                if let Ok((mut transform, mut camera)) = camera_query.get_single_mut() {
+                if let Ok((mut transform, mut camera)) = camera_query.single_mut() {
                     transform.translation = Vec3::from_array(bookmark.position);
                     transform.rotation =
                         Quat::from_euler(EulerRot::YXZ, bookmark.yaw, bookmark.pitch, 0.0);
@@ -333,11 +334,11 @@ pub fn refresh_palette_ui(
         return;
     }
 
-    if let Ok(mut search_text) = search_query.get_single_mut() {
+    if let Ok(mut search_text) = search_query.single_mut() {
         search_text.0 = format!("Search: {}", palette.search);
     }
 
-    if let Ok(mut selection_text) = selection_query.get_single_mut() {
+    if let Ok(mut selection_text) = selection_query.single_mut() {
         selection_text.0 = match &palette.active_selection {
             Some(PlacementSelection::Voxel(v)) => format!("Selected: {:?}", v),
             Some(PlacementSelection::Prop { id, prop_type }) => {
@@ -347,8 +348,8 @@ pub fn refresh_palette_ui(
         };
     }
 
-    if let Ok(list_entity) = list_query.get_single() {
-        commands.entity(list_entity).despawn_descendants();
+    if let Ok(list_entity) = list_query.single() {
+        commands.entity(list_entity).despawn_children();
 
         let search_lower = palette.search.to_lowercase();
 
@@ -380,7 +381,7 @@ pub fn refresh_palette_ui(
                 .map(|sel| sel == &item.selection)
                 .unwrap_or(false);
 
-            commands.entity(list_entity).with_children(|list: &mut ChildBuilder| {
+            commands.entity(list_entity).with_children(|list| {
                 list.spawn((
                     Button,
                     Node {
@@ -398,7 +399,7 @@ pub fn refresh_palette_ui(
                     }),
                     PaletteItemButton(*index),
                 ))
-                .with_children(|button: &mut ChildBuilder| {
+                .with_children(|button| {
                     button.spawn((
                         Text::new(&item.label),
                         TextFont {
@@ -425,8 +426,8 @@ pub fn refresh_palette_ui(
         }
     }
 
-    if let Ok(list_entity) = bookmark_query.get_single() {
-        commands.entity(list_entity).despawn_descendants();
+    if let Ok(list_entity) = bookmark_query.single() {
+        commands.entity(list_entity).despawn_children();
 
         let font = asset_server.load("fonts/FiraSans-Bold.ttf");
 
@@ -436,7 +437,7 @@ pub fn refresh_palette_ui(
                 bookmark.name, bookmark.position[0], bookmark.position[1], bookmark.position[2]
             );
 
-            commands.entity(list_entity).with_children(|list: &mut ChildBuilder| {
+            commands.entity(list_entity).with_children(|list| {
                 list.spawn((
                     Node {
                         flex_direction: FlexDirection::Row,
@@ -449,7 +450,7 @@ pub fn refresh_palette_ui(
                     },
                     BackgroundColor(Color::srgba(0.12, 0.12, 0.15, 0.8)),
                 ))
-                .with_children(|row: &mut ChildBuilder| {
+                .with_children(|row| {
                     row.spawn((
                         Text::new(name),
                         TextFont {
@@ -469,7 +470,7 @@ pub fn refresh_palette_ui(
                         BackgroundColor(Color::srgba(0.2, 0.35, 0.2, 0.85)),
                         BookmarkTeleportButton(index),
                     ))
-                    .with_children(|button: &mut ChildBuilder| {
+                    .with_children(|button| {
                         button.spawn((
                             Text::new("Teleport"),
                             TextFont {
@@ -490,7 +491,7 @@ pub fn refresh_palette_ui(
                         BackgroundColor(Color::srgba(0.35, 0.15, 0.15, 0.85)),
                         BookmarkDeleteButton(index),
                     ))
-                    .with_children(|button: &mut ChildBuilder| {
+                    .with_children(|button| {
                         button.spawn((
                             Text::new("Delete"),
                             TextFont {
@@ -535,7 +536,7 @@ pub fn place_prop_from_palette(
         return;
     };
 
-    let Some((block_pos, normal)) = (targeted.position, targeted.normal) else {
+    let (Some(block_pos), Some(normal)) = (targeted.position, targeted.normal) else {
         return;
     };
 
@@ -583,7 +584,7 @@ fn spawn_palette_ui(
             BackgroundColor(Color::srgba(0.05, 0.05, 0.07, 0.9)),
             PaletteRoot,
         ))
-        .with_children(|root: &mut ChildBuilder| {
+        .with_children(|root| {
             root.spawn((
                 Text::new("Placement Palette (Tab to close)"),
                 TextFont {
@@ -625,7 +626,7 @@ fn spawn_palette_ui(
                 BackgroundColor(Color::srgba(0.2, 0.3, 0.2, 0.9)),
                 SaveBookmarkButton,
             ))
-            .with_children(|button: &mut ChildBuilder| {
+            .with_children(|button| {
                 button.spawn((
                     Text::new("Bookmark current position (uses search text for name)"),
                     TextFont {
@@ -688,7 +689,7 @@ fn spawn_palette_ui(
 
 fn despawn_palette_ui(commands: &mut Commands, palette: &mut ResMut<PlacementPaletteState>) {
     if let Some(entity) = palette.root.take() {
-        commands.entity(entity).despawn_recursive();
+        commands.entity(entity).despawn();
     }
 }
 

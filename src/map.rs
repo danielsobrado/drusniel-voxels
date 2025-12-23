@@ -2,7 +2,9 @@ use crate::camera::controller::PlayerCamera;
 use crate::menu::PauseMenuState;
 use crate::voxel::world::VoxelWorld;
 use bevy::prelude::*;
+use bevy::asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::ui::{
     AlignItems, FlexDirection, JustifyContent, PositionType, Val,
 };
@@ -56,7 +58,7 @@ fn toggle_map_overlay(
 
     if state.open {
         if let Some(entity) = state.root_entity.take() {
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
         }
         state.open = false;
         return;
@@ -168,7 +170,7 @@ fn update_player_marker(
         return;
     }
 
-    let Ok(camera_transform) = camera_query.get_single() else {
+    let Ok(camera_transform) = camera_query.single() else {
         return;
     };
 
@@ -184,7 +186,7 @@ fn update_player_marker(
     let left = x_ratio * MAP_SIZE - (MARKER_SIZE * 0.5);
     let top = (1.0 - z_ratio) * MAP_SIZE - (MARKER_SIZE * 0.5);
 
-    if let Ok(mut node) = marker_query.get_single_mut() {
+    if let Ok(mut node) = marker_query.single_mut() {
         node.left = Val::Px(left);
         node.top = Val::Px(top);
     }
@@ -199,11 +201,11 @@ fn update_coordinates_text(
         return;
     }
 
-    let Ok(mut text) = text_query.get_single_mut() else {
+    let Ok(mut text) = text_query.single_mut() else {
         return;
     };
 
-    let Ok(camera_transform) = camera_query.get_single() else {
+    let Ok(camera_transform) = camera_query.single() else {
         return;
     };
 
@@ -250,6 +252,7 @@ fn create_map_texture(images: &mut Assets<Image>, world: &VoxelWorld) -> Handle<
         TextureDimension::D2,
         &data,
         TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
     );
 
     image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
