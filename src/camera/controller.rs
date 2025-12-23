@@ -88,11 +88,6 @@ pub fn spawn_camera(
         // Tonemapping for better HDR look
         Tonemapping::TonyMcMapface,
         DebandDither::Enabled,
-        ScreenSpaceAmbientOcclusion {
-            quality_level: bevy::pbr::ScreenSpaceAmbientOcclusionQualityLevel::High,
-            constant_object_thickness: 0.5,
-            ..default()
-        },
         ShadowFilteringMethod::Gaussian,
         // Atmospheric fog with warm/pink horizon tint
         DistanceFog {
@@ -103,7 +98,17 @@ pub fn spawn_camera(
         },
     ));
 
-    if capabilities.taa_supported {
+    if !capabilities.integrated_gpu {
+        camera.insert(ScreenSpaceAmbientOcclusion {
+            quality_level: bevy::pbr::ScreenSpaceAmbientOcclusionQualityLevel::High,
+            constant_object_thickness: 0.5,
+            ..default()
+        });
+    }
+
+    if capabilities.integrated_gpu {
+        camera.insert(Smaa { preset: SmaaPreset::Low });
+    } else if capabilities.taa_supported {
         camera.insert((
             TemporalAntiAliasing::default(),
             ContrastAdaptiveSharpening {

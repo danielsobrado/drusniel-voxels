@@ -1,5 +1,6 @@
 use crate::camera::controller::PlayerCamera;
 use crate::constants::{CHUNK_SIZE, CHUNK_SIZE_I32};
+use crate::rendering::capabilities::GraphicsCapabilities;
 use crate::rendering::materials::VoxelMaterial;
 use crate::rendering::triplanar_material::TriplanarMaterialHandle;
 use crate::voxel::chunk::{Chunk, LodLevel};
@@ -60,7 +61,12 @@ impl Plugin for VoxelPlugin {
         .add_systems(Startup, setup_voxel_world)
         .add_systems(
             Update,
-            (update_chunk_lod_system, mesh_dirty_chunks_system).chain(),
+            (
+                adjust_lod_for_integrated_gpu,
+                update_chunk_lod_system,
+                mesh_dirty_chunks_system,
+            )
+                .chain(),
         );
         // .add_plugins(GravityPlugin); // Deactivated due to performance impact
     }
@@ -732,6 +738,33 @@ fn mesh_dirty_chunks_system(
             }
         }
     }
+}
+
+fn adjust_lod_for_integrated_gpu(
+    capabilities: Option<Res<GraphicsCapabilities>>,
+    mut lod_settings: ResMut<LodSettings>,
+    mut applied: Local<bool>,
+) {
+    if *applied {
+        return;
+    }
+
+    let Some(capabilities) = capabilities else {
+        return;
+    };
+
+    if capabilities.adapter_name.is_none() {
+        return;
+    }
+
+    if capabilities.integrated_gpu {
+        lod_settings.high_detail_distance = 64.0;
+        lod_settings.cull_distance = 128.0;
+        lod_settings.low_detail_mode = MeshMode::Blocky;
+        info!("Integrated GPU detected; using more aggressive chunk LOD distances.");
+    }
+
+    *applied = true;
 }
 
 fn update_chunk_lod_system(
