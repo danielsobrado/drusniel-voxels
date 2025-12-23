@@ -1,4 +1,3 @@
-use bevy::pbr::ScreenSpaceReflectionsPlugin;
 use bevy::prelude::*;
 
 use crate::rendering::capabilities::{
@@ -18,7 +17,7 @@ impl Plugin for RenderingPlugin {
                 Startup,
                 detect_graphics_capabilities.in_set(GraphicsDetectionSet),
             )
-            .add_plugins(ScreenSpaceReflectionsPlugin)
+            // ScreenSpaceReflectionsPlugin is already included by DefaultPlugins via PbrPlugin.
             // Register TriplanarMaterial as a custom material type
             .add_plugins(MaterialPlugin::<TriplanarMaterial>::default())
             // Register BlockyMaterial
