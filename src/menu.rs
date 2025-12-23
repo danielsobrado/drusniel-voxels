@@ -1896,15 +1896,17 @@ fn update_settings_tab_backgrounds(
 
 fn update_settings_content_visibility(
     settings_state: Res<SettingsState>,
-    mut graphics_query: Query<&mut Visibility, With<GraphicsTabContent>>,
-    mut gameplay_query: Query<&mut Visibility, With<GameplayTabContent>>,
-    mut atmosphere_query: Query<&mut Visibility, With<AtmosphereTabContent>>,
+    mut visibility_queries: ParamSet<(
+        Query<&mut Visibility, With<GraphicsTabContent>>,
+        Query<&mut Visibility, With<GameplayTabContent>>,
+        Query<&mut Visibility, With<AtmosphereTabContent>>,
+    )>,
 ) {
     if settings_state.dialog_root.is_none() {
         return;
     }
 
-    if let Ok(mut graphics_visibility) = graphics_query.single_mut() {
+    if let Ok(mut graphics_visibility) = visibility_queries.p0().single_mut() {
         *graphics_visibility = if settings_state.active_tab == SettingsTab::Graphics {
             Visibility::Visible
         } else {
@@ -1912,7 +1914,7 @@ fn update_settings_content_visibility(
         };
     }
 
-    if let Ok(mut gameplay_visibility) = gameplay_query.single_mut() {
+    if let Ok(mut gameplay_visibility) = visibility_queries.p1().single_mut() {
         *gameplay_visibility = if settings_state.active_tab == SettingsTab::Gameplay {
             Visibility::Visible
         } else {
@@ -1920,7 +1922,7 @@ fn update_settings_content_visibility(
         };
     }
 
-    if let Ok(mut atmosphere_visibility) = atmosphere_query.single_mut() {
+    if let Ok(mut atmosphere_visibility) = visibility_queries.p2().single_mut() {
         *atmosphere_visibility = if settings_state.active_tab == SettingsTab::Atmosphere {
             Visibility::Visible
         } else {

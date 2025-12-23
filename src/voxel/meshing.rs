@@ -341,6 +341,20 @@ fn get_face_atlas_index(voxel: VoxelType, face: Face) -> u8 {
     }
 }
 
+/// Map voxel/face to blocky texture array layer (grass, dirt, rock, sand).
+fn get_blocky_material_index(voxel: VoxelType, face: Face) -> u8 {
+    match voxel {
+        VoxelType::TopSoil => match face {
+            Face::Bottom => 1, // Dirt
+            _ => 0,            // Grass
+        },
+        VoxelType::SubSoil | VoxelType::Clay | VoxelType::Wood | VoxelType::Leaves => 1, // Dirt
+        VoxelType::Rock | VoxelType::Bedrock | VoxelType::DungeonWall | VoxelType::DungeonFloor => 2, // Rock
+        VoxelType::Sand => 3, // Sand
+        _ => 0, // Default to grass for unsupported/air/water
+    }
+}
+
 fn add_face_with_ao(
     mesh_data: &mut MeshData,
     chunk: &Chunk,
@@ -396,11 +410,12 @@ fn add_face_with_ao(
     mesh_data.normals.push(normal);
     mesh_data.normals.push(normal);
     
-    // Add vertex colors for AO (grayscale)
-    mesh_data.colors.push([ao[0], ao[0], ao[0], 1.0]);
-    mesh_data.colors.push([ao[1], ao[1], ao[1], 1.0]);
-    mesh_data.colors.push([ao[2], ao[2], ao[2], 1.0]);
-    mesh_data.colors.push([ao[3], ao[3], ao[3], 1.0]);
+    let material_index = get_blocky_material_index(voxel, face) as f32 / 255.0;
+    // Add vertex colors for AO (grayscale) + material index in alpha
+    mesh_data.colors.push([ao[0], ao[0], ao[0], material_index]);
+    mesh_data.colors.push([ao[1], ao[1], ao[1], material_index]);
+    mesh_data.colors.push([ao[2], ao[2], ao[2], material_index]);
+    mesh_data.colors.push([ao[3], ao[3], ao[3], material_index]);
     
     // Face-specific texture
     let atlas_idx = get_face_atlas_index(voxel, face);
@@ -520,11 +535,12 @@ fn add_face_no_ao(
     mesh_data.normals.push(normal);
     mesh_data.normals.push(normal);
     
-    // Full brightness for water
-    mesh_data.colors.push([1.0, 1.0, 1.0, 1.0]);
-    mesh_data.colors.push([1.0, 1.0, 1.0, 1.0]);
-    mesh_data.colors.push([1.0, 1.0, 1.0, 1.0]);
-    mesh_data.colors.push([1.0, 1.0, 1.0, 1.0]);
+    let material_index = get_blocky_material_index(voxel, face) as f32 / 255.0;
+    // Full brightness for water; keep material index in alpha for blocky shader safety.
+    mesh_data.colors.push([1.0, 1.0, 1.0, material_index]);
+    mesh_data.colors.push([1.0, 1.0, 1.0, material_index]);
+    mesh_data.colors.push([1.0, 1.0, 1.0, material_index]);
+    mesh_data.colors.push([1.0, 1.0, 1.0, material_index]);
     
     let atlas_idx = voxel.atlas_index();
     let cols = 4.0;

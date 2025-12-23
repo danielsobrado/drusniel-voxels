@@ -49,7 +49,7 @@ fn vertex(vertex: VertexInput) -> VertexOutput {
     // The material index is stored in the red channel of the vertex color
     // We assume the mesher puts the index there.
     // Index 0 = Grass, 1 = Dirt, 2 = Rock, 3 = Sand, etc.
-    out.material_index = i32(vertex.color.r * 255.0 + 0.5); 
+    out.material_index = i32(vertex.color.a * 255.0 + 0.5); 
     
     return out;
 }
@@ -57,7 +57,7 @@ fn vertex(vertex: VertexInput) -> VertexOutput {
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // Sample texture array
-    let layer = in.material_index;
+    let layer = clamp(in.material_index, 0, 3);
     
     // Simple diffuse sample
     let diffuse = textureSample(t_diffuse, s_diffuse, in.uv, layer);

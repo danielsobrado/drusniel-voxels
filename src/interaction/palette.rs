@@ -257,8 +257,10 @@ pub fn handle_bookmark_buttons(
     mut save_buttons: Query<&Interaction, (Changed<Interaction>, With<SaveBookmarkButton>)>,
     mut teleport_buttons: Query<(&Interaction, &BookmarkTeleportButton), Changed<Interaction>>,
     mut delete_buttons: Query<(&Interaction, &BookmarkDeleteButton), Changed<Interaction>>,
-    mut camera_query: Query<(&mut Transform, &mut PlayerCamera)>,
-    camera_read_query: Query<(&Transform, &PlayerCamera)>,
+    mut camera_queries: ParamSet<(
+        Query<(&Transform, &PlayerCamera)>,
+        Query<(&mut Transform, &mut PlayerCamera)>,
+    )>,
     mut palette: ResMut<PlacementPaletteState>,
     mut store: ResMut<BookmarkStore>,
 ) {
@@ -268,7 +270,7 @@ pub fn handle_bookmark_buttons(
 
     for interaction in save_buttons.iter_mut() {
         if *interaction == Interaction::Pressed {
-            if let Ok((transform, camera)) = camera_read_query.single() {
+            if let Ok((transform, camera)) = camera_queries.p0().single() {
                 let name = if palette.search.is_empty() {
                     format!("Bookmark {}", store.bookmarks.len() + 1)
                 } else {
@@ -290,7 +292,7 @@ pub fn handle_bookmark_buttons(
     for (interaction, BookmarkTeleportButton(index)) in teleport_buttons.iter_mut() {
         if *interaction == Interaction::Pressed {
             if let Some(bookmark) = store.bookmarks.get(*index).cloned() {
-                if let Ok((mut transform, mut camera)) = camera_query.single_mut() {
+                if let Ok((mut transform, mut camera)) = camera_queries.p1().single_mut() {
                     transform.translation = Vec3::from_array(bookmark.position);
                     transform.rotation =
                         Quat::from_euler(EulerRot::YXZ, bookmark.yaw, bookmark.pitch, 0.0);
@@ -323,8 +325,10 @@ pub fn refresh_palette_ui(
     items: Res<PaletteItems>,
     mut palette: ResMut<PlacementPaletteState>,
     store: Res<BookmarkStore>,
-    mut search_query: Query<&mut Text, With<PaletteSearchText>>,
-    mut selection_query: Query<&mut Text, With<PaletteSelectionText>>,
+    mut text_queries: ParamSet<(
+        Query<&mut Text, With<PaletteSearchText>>,
+        Query<&mut Text, With<PaletteSelectionText>>,
+    )>,
     list_query: Query<Entity, With<PaletteList>>,
     bookmark_query: Query<Entity, With<BookmarkList>>,
     mut commands: Commands,
@@ -334,11 +338,11 @@ pub fn refresh_palette_ui(
         return;
     }
 
-    if let Ok(mut search_text) = search_query.single_mut() {
+    if let Ok(mut search_text) = text_queries.p0().single_mut() {
         search_text.0 = format!("Search: {}", palette.search);
     }
 
-    if let Ok(mut selection_text) = selection_query.single_mut() {
+    if let Ok(mut selection_text) = text_queries.p1().single_mut() {
         selection_text.0 = match &palette.active_selection {
             Some(PlacementSelection::Voxel(v)) => format!("Selected: {:?}", v),
             Some(PlacementSelection::Prop { id, prop_type }) => {
