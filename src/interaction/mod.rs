@@ -500,7 +500,7 @@ pub fn update_drag_rotation(
     edit_mode: Res<EditMode>,
     delete_mode: Res<DeleteMode>,
     mut drag_state: ResMut<DragState>,
-    mut mouse_wheel: EventReader<MouseWheel>,
+    mut mouse_wheel: MessageReader<MouseWheel>,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     if !edit_mode.enabled || delete_mode.enabled {

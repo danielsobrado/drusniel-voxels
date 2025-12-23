@@ -163,7 +163,7 @@ fn toggle_map_overlay(
 fn update_player_marker(
     state: Res<MapState>,
     world: Res<VoxelWorld>,
-    mut marker_query: Query<&mut Style, With<MapPlayerMarker>>,
+    mut marker_query: Query<&mut Node, With<MapPlayerMarker>>,
     camera_query: Query<&Transform, With<PlayerCamera>>,
 ) {
     if !state.open {

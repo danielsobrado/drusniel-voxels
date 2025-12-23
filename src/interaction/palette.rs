@@ -193,7 +193,7 @@ pub fn handle_palette_input(
     pause_state: Res<PauseMenuState>,
     chat_state: Option<Res<ChatState>>,
     keys: Res<ButtonInput<KeyCode>>,
-    mut char_evr: EventReader<KeyboardInput>,
+    mut char_evr: MessageReader<KeyboardInput>,
     mut commands: Commands,
 ) {
     if !palette.open || pause_state.open || chat_state.as_ref().map(|c| c.active).unwrap_or(false) {

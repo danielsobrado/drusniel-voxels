@@ -124,7 +124,7 @@ pub fn spawn_wolves(
             if hash > 0.50 { // 50% spawn chance
                 // Find surface height - iterate from BOTTOM to TOP
                 let mut surface_y = None;
-                let mut surfaces_found = 0;
+                // let mut surfaces_found = 0;
                 
                 for y in 1..64 {
                     let pos = IVec3::new(world_x, y, world_z);
@@ -136,7 +136,7 @@ pub fn spawn_wolves(
                             current_voxel == VoxelType::SubSoil || current_voxel == VoxelType::Rock) &&
                            above_voxel == VoxelType::Air {
                             surface_y = Some((y, current_voxel));
-                            surfaces_found += 1;
+                            // surfaces_found += 1;
                         }
                     }
                 }
@@ -239,7 +239,7 @@ fn add_box(
     center: Vec3,
     size: Vec3,
 ) {
-    let base_index = positions.len() as u32;
+    let _base_index = positions.len() as u32;
     let half = size / 2.0;
 
     // 8 vertices of the box

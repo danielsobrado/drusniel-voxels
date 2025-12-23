@@ -3,7 +3,7 @@ use crate::constants::{CHUNK_SIZE, CHUNK_SIZE_I32};
 use crate::rendering::materials::VoxelMaterial;
 use crate::rendering::triplanar_material::TriplanarMaterialHandle;
 use crate::voxel::chunk::{Chunk, LodLevel};
-use crate::voxel::gravity::GravityPlugin;
+// use crate::voxel::gravity::GravityPlugin;
 use crate::voxel::meshing::{MeshMode, MeshSettings, generate_chunk_mesh_with_mode};
 use crate::voxel::persistence::{self, WorldPersistence};
 use crate::voxel::types::VoxelType;
@@ -739,7 +739,9 @@ fn update_chunk_lod_system(
     camera_query: Query<&Transform, With<PlayerCamera>>,
     lod_settings: Res<LodSettings>,
 ) {
-    let camera_transform = camera_query.single();
+    let Some(camera_transform) = camera_query.iter().next() else {
+        return;
+    };
 
     let camera_pos = camera_transform.translation;
 

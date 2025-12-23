@@ -133,7 +133,7 @@ fn toggle_chat_input(keys: Res<ButtonInput<KeyCode>>, mut chat_state: ResMut<Cha
 
 fn process_chat_characters(
     mut chat_state: ResMut<ChatState>,
-    mut char_evr: EventReader<KeyboardInput>,
+    mut char_evr: MessageReader<KeyboardInput>,
     keys: Res<ButtonInput<KeyCode>>,
     pause_state: Option<Res<PauseMenuState>>,
 ) {

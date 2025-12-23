@@ -6,12 +6,15 @@ use crate::voxel::{meshing::ChunkMesh, persistence, world::VoxelWorld};
 use bevy::{
     input::keyboard::{Key, KeyboardInput},
     prelude::*,
-    window::{PrimaryWindow, WindowMode, WindowResolution},
+    window::{PrimaryWindow, WindowMode, WindowResolution, MonitorSelection, VideoModeSelection},
 };
+// use bevy::prelude::ChildBuilder;
 use bevy::ui::{
-    AlignItems, AlignSelf, FlexDirection, JustifyContent, PositionType,
+    AlignItems, AlignSelf, FlexDirection, JustifyContent, 
     UiRect, Val,
 };
+use bevy::prelude::MessageReader;
+use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use std::net::ToSocketAddrs;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{Arc, Mutex};
@@ -286,25 +289,79 @@ impl Plugin for PauseMenuPlugin {
                 Update,
                 (
                     toggle_pause_menu,
+                ),
+            )
+            .add_systems(
+                Update,
+                (
                     handle_menu_buttons,
+                ),
+            )
+            .add_systems(
+                Update,
+                (
                     poll_connect_task_results,
-                    handle_settings_buttons,
+                ),
+            )
+            .add_systems(
+                Update,
+                (
+                    handle_settings_tabs,
+                    handle_graphics_settings,
+                    handle_atmosphere_settings,
+                    handle_close_settings,
+                ),
+            )
+            .add_systems(
+                Update,
+                (
                     handle_input_interaction,
+                ),
+            )
+            .add_systems(
+                Update,
+                (
                     process_input_characters,
+                ),
+            )
+
+            .add_systems(
+                Update,
+                (
                     update_input_texts,
                     update_input_backgrounds,
+                ),
+            )
+            .add_systems(
+                Update,
+                (
                     update_settings_tab_backgrounds,
                     update_settings_content_visibility,
                     update_settings_graphics_backgrounds,
                     update_settings_aa_backgrounds,
+                ),
+            )
+            .add_systems(
+                Update,
+                (
                     update_settings_ray_tracing_backgrounds,
                     update_settings_display_mode_backgrounds,
                     update_settings_resolution_backgrounds,
                     update_day_length_backgrounds,
+                ),
+            )
+            .add_systems(
+                Update,
+                (
                     update_time_scale_backgrounds,
                     update_rayleigh_backgrounds,
                     update_mie_backgrounds,
                     update_mie_direction_backgrounds,
+                ),
+            )
+            .add_systems(
+                Update,
+                (
                     update_exposure_backgrounds,
                     update_twilight_backgrounds,
                     update_night_backgrounds,
@@ -414,6 +471,11 @@ fn open_menu(
                         ..default()
                     })
                     .with_children(|row| {
+                        // The type is inferred as &mut RelatedSpawnerCommands (or similar helper)
+                        // but spawn_button expects ChildSpawner (RelatedSpawner).
+                        // We need to match what spawn_button expects or change spawn_button.
+                        // I will change spawn_button signature in next step if this fails,
+                        // but first let's try to remove the type annotation and see what inference says.
                         spawn_button(row, &font, "Save", PauseMenuButton::Save);
                         spawn_button(row, &font, "Load", PauseMenuButton::Load);
                         spawn_button(row, &font, "Settings", PauseMenuButton::Settings);
@@ -545,7 +607,7 @@ fn open_menu(
 
 
 fn spawn_labeled_input(
-    parent: &mut bevy::ecs::hierarchy::ChildBuilder,
+    parent: &mut ChildSpawnerCommands,
     font: &Handle<Font>,
     label: &str,
     placeholder: &str,
@@ -557,7 +619,7 @@ fn spawn_labeled_input(
             row_gap: Val::Px(4.0),
             ..default()
         })
-        .with_children(|column| {
+        .with_children(|column: &mut ChildSpawnerCommands| {
             column.spawn((
                 Text::new(label),
                 TextFont {
@@ -597,7 +659,7 @@ fn spawn_labeled_input(
 }
 
 fn spawn_button(
-    parent: &mut bevy::ecs::hierarchy::ChildBuilder,
+    parent: &mut ChildSpawnerCommands,
     font: &Handle<Font>,
     label: &str,
     action: PauseMenuButton,
@@ -1210,7 +1272,7 @@ fn spawn_settings_dialog(
 }
 
 fn spawn_settings_tab_button(
-    parent: &mut bevy::ecs::hierarchy::ChildBuilder,
+    parent: &mut ChildSpawnerCommands,
     font: &Handle<Font>,
     label: &str,
     tab: SettingsTabButton,
@@ -1241,7 +1303,7 @@ fn spawn_settings_tab_button(
 }
 
 fn spawn_graphics_option<T: Component + Copy + Send + Sync + 'static>(
-    parent: &mut bevy::ecs::hierarchy::ChildBuilder,
+    parent: &mut ChildSpawnerCommands,
     font: &Handle<Font>,
     label: &str,
     tag: T,
@@ -1258,7 +1320,7 @@ fn spawn_graphics_option<T: Component + Copy + Send + Sync + 'static>(
             BackgroundColor(Color::srgba(0.2, 0.2, 0.2, 0.9)),
             tag,
         ))
-        .with_children(|button| {
+        .with_children(|button: &mut ChildSpawnerCommands| {
             button.spawn((
                 Text::new(label),
                 TextFont {
@@ -1508,8 +1570,9 @@ fn poll_connect_task_results(
             network.last_health_ok = true;
 
             info!("Connected to {} (latency: {} ms)", address, latency_ms);
+            let username = chat.username.clone();
             chat.push_message(crate::chat::ChatMessage {
-                user: chat.username.clone(),
+                user: username,
                 content: format!("Connected to {} ({} ms latency)", address, latency_ms),
             });
             connect_tasks.receiver = None;
@@ -1532,13 +1595,32 @@ fn poll_connect_task_results(
     }
 }
 
-fn handle_settings_buttons(
+fn handle_settings_tabs(
+    state: Res<PauseMenuState>,
+    mut settings_state: ResMut<SettingsState>,
+    mut tab_query: Query<(&Interaction, &SettingsTabButton), (Changed<Interaction>, With<Button>)>,
+) {
+    if !state.open || settings_state.dialog_root.is_none() {
+        return;
+    }
+
+    for (interaction, tab) in tab_query.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            settings_state.active_tab = match tab {
+                SettingsTabButton::Graphics => SettingsTab::Graphics,
+                SettingsTabButton::Gameplay => SettingsTab::Gameplay,
+                SettingsTabButton::Atmosphere => SettingsTab::Atmosphere,
+            };
+        }
+    }
+}
+
+fn handle_graphics_settings(
     mut commands: Commands,
     state: Res<PauseMenuState>,
     mut settings_state: ResMut<SettingsState>,
     mut ray_tracing_settings: ResMut<RayTracingSettings>,
     capabilities: Res<GraphicsCapabilities>,
-    mut tab_query: Query<(&Interaction, &SettingsTabButton), (Changed<Interaction>, With<Button>)>,
     mut quality_query: Query<
         (&Interaction, &GraphicsQualityOption),
         (Changed<Interaction>, With<Button>),
@@ -1556,52 +1638,10 @@ fn handle_settings_buttons(
         (&Interaction, &ResolutionOption),
         (Changed<Interaction>, With<Button>),
     >,
-    mut day_length_query: Query<
-        (&Interaction, &DayLengthOption),
-        (Changed<Interaction>, With<Button>),
-    >,
-    mut time_scale_query: Query<
-        (&Interaction, &TimeScaleOption),
-        (Changed<Interaction>, With<Button>),
-    >,
-    mut rayleigh_query: Query<
-        (&Interaction, &RayleighOption),
-        (Changed<Interaction>, With<Button>),
-    >,
-    mut mie_query: Query<(&Interaction, &MieOption), (Changed<Interaction>, With<Button>)>,
-    mut mie_direction_query: Query<
-        (&Interaction, &MieDirectionOption),
-        (Changed<Interaction>, With<Button>),
-    >,
-    mut exposure_query: Query<
-        (&Interaction, &ExposureOption),
-        (Changed<Interaction>, With<Button>),
-    >,
-    mut twilight_query: Query<
-        (&Interaction, &TwilightBandOption),
-        (Changed<Interaction>, With<Button>),
-    >,
-    mut night_query: Query<
-        (&Interaction, &NightBrightnessOption),
-        (Changed<Interaction>, With<Button>),
-    >,
-    mut fog_query: Query<(&Interaction, &FogPresetOption), (Changed<Interaction>, With<Button>)>,
-    mut close_query: Query<&Interaction, (Changed<Interaction>, With<CloseSettingsButton>)>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
-    mut atmosphere_settings: ResMut<AtmosphereSettings>,
 ) {
     if !state.open || settings_state.dialog_root.is_none() {
         return;
-    }
-
-    for (interaction, tab) in tab_query.iter_mut() {
-        if *interaction == Interaction::Pressed {
-            settings_state.active_tab = match tab {
-                SettingsTabButton::Graphics => SettingsTab::Graphics,
-                SettingsTabButton::Gameplay => SettingsTab::Gameplay,
-                SettingsTabButton::Atmosphere => SettingsTab::Atmosphere,
-            };
-        }
     }
 
     for (interaction, option) in quality_query.iter_mut() {
@@ -1644,6 +1684,46 @@ fn handle_settings_buttons(
             settings_state.resolution = option.0;
             apply_window_settings(&settings_state, &mut windows);
         }
+    }
+}
+
+fn handle_atmosphere_settings(
+    state: Res<PauseMenuState>,
+    mut settings_state: ResMut<SettingsState>,
+    mut day_length_query: Query<
+        (&Interaction, &DayLengthOption),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut time_scale_query: Query<
+        (&Interaction, &TimeScaleOption),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut rayleigh_query: Query<
+        (&Interaction, &RayleighOption),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut mie_query: Query<(&Interaction, &MieOption), (Changed<Interaction>, With<Button>)>,
+    mut mie_direction_query: Query<
+        (&Interaction, &MieDirectionOption),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut exposure_query: Query<
+        (&Interaction, &ExposureOption),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut twilight_query: Query<
+        (&Interaction, &TwilightBandOption),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut night_query: Query<
+        (&Interaction, &NightBrightnessOption),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut fog_query: Query<(&Interaction, &FogPresetOption), (Changed<Interaction>, With<Button>)>,
+    mut atmosphere_settings: ResMut<AtmosphereSettings>,
+) {
+    if !state.open || settings_state.dialog_root.is_none() {
+        return;
     }
 
     for (interaction, option) in day_length_query.iter_mut() {
@@ -1747,6 +1827,17 @@ fn handle_settings_buttons(
             };
         }
     }
+}
+
+fn handle_close_settings(
+    mut commands: Commands,
+    state: Res<PauseMenuState>,
+    mut settings_state: ResMut<SettingsState>,
+    mut close_query: Query<&Interaction, (Changed<Interaction>, With<CloseSettingsButton>)>,
+) {
+    if !state.open || settings_state.dialog_root.is_none() {
+        return;
+    }
 
     for interaction in close_query.iter_mut() {
         if *interaction == Interaction::Pressed {
@@ -1765,7 +1856,7 @@ fn apply_window_settings(
 
     window.mode = match settings_state.display_mode {
         DisplayMode::Bordered | DisplayMode::Borderless => WindowMode::Windowed,
-        DisplayMode::Fullscreen => WindowMode::Fullscreen,
+        DisplayMode::Fullscreen => WindowMode::Fullscreen(MonitorSelection::Primary, VideoModeSelection::Current),
     };
     window.decorations = matches!(settings_state.display_mode, DisplayMode::Bordered);
     window.resolution = WindowResolution::new(
@@ -2115,7 +2206,7 @@ fn process_input_characters(
     mut form_state: ResMut<MultiplayerFormState>,
     state: Res<PauseMenuState>,
     keys: Res<ButtonInput<KeyCode>>,
-    mut char_evr: EventReader<KeyboardInput>,
+    mut char_evr: MessageReader<KeyboardInput>,
 ) {
     if !state.open {
         return;
@@ -2222,7 +2313,7 @@ fn update_input_backgrounds(
 }
 
 fn spawn_favorite_button(
-    parent: &mut bevy::ecs::hierarchy::ChildBuilder,
+    parent: &mut ChildSpawnerCommands,
     font: &Handle<Font>,
     index: usize,
     favorite: &FavoriteServer,
@@ -2241,7 +2332,7 @@ fn spawn_favorite_button(
             BackgroundColor(Color::srgba(0.18, 0.18, 0.18, 0.9)),
             FavoriteButton(index),
         ))
-        .with_children(|button| {
+        .with_children(|button: &mut ChildSpawnerCommands| {
             button.spawn((
                 Text::new(label),
                 TextFont {

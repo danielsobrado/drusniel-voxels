@@ -5,13 +5,15 @@ use crate::rendering::capabilities::GraphicsCapabilities;
 use crate::rendering::ray_tracing::RayTracingSettings;
 use crate::voxel::types::Voxel;
 use crate::voxel::world::VoxelWorld;
-use bevy::anti_alias::taa::TemporalAntiAliasing;
-use bevy::core_pipeline::bloom::Bloom;
+use bevy::prelude::*;
 use bevy::core_pipeline::tonemapping::Tonemapping;
+use bevy::anti_alias::taa::TemporalAntiAliasing;
 use bevy::input::mouse::MouseMotion;
 use bevy::pbr::{DistanceFog, FogFalloff, ScreenSpaceAmbientOcclusion, ScreenSpaceReflections};
-use bevy::prelude::*;
-use bevy::render::view::Msaa;
+use bevy::post_process::bloom::Bloom;
+// HDR might be in post_process or camera
+// use bevy::post_process::Hdr; 
+
 use bevy::window::{CursorGrabMode, CursorOptions};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -71,7 +73,8 @@ pub fn spawn_camera(
 ) {
     let mut camera = commands.spawn((
         Camera3d::default(),
-        Camera { hdr: true, ..default() },
+        Camera::default(),
+        // Camera3dHdr, // Still need to find the correct type
         Bloom {
             intensity: 0.1, // Subtle glow on bright highlights
             ..default()
@@ -91,8 +94,7 @@ pub fn spawn_camera(
     ));
 
     if capabilities.taa_supported {
-        camera.insert(TemporalAntiAliasing::default());
-        commands.insert_resource(Msaa::Off);
+        camera.insert((TemporalAntiAliasing::default(), Msaa::Off));
     }
 
     if ray_tracing.enabled && capabilities.ray_tracing_supported {
@@ -130,7 +132,7 @@ pub fn update_ray_tracing_on_camera(
 pub fn player_camera_system(
     mut query: Query<(&mut Transform, &mut PlayerCamera)>,
     keys: Res<ButtonInput<KeyCode>>,
-    mut mouse_motion: EventReader<MouseMotion>,
+    mut mouse_motion: MessageReader<MouseMotion>,
     time: Res<Time>,
     mut windows: Query<(&mut Window, &mut CursorOptions)>,
     world: Res<VoxelWorld>,

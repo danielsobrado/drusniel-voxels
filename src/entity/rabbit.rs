@@ -77,13 +77,13 @@ pub fn fix_rabbit_textures(
         let mut fixed_any = false;
 
         while let Some(curr) = stack.pop() {
-            let mut mesh_uv_missing = false;
+            // let mut mesh_uv_missing = false;
 
             // Check mesh for UVs and Generate if missing
             if let Ok(mesh_handle) = mesh_query.get(curr) {
                 if let Some(mesh) = meshes.get_mut(mesh_handle) {
                     if !mesh.contains_attribute(Mesh::ATTRIBUTE_UV_0) {
-                        mesh_uv_missing = true;
+                        // mesh_uv_missing = true;
                         info!("Mesh {:?} missing UVs. Generating procedural UVs...", mesh_handle.id());
                         
                         // Generate simple planar UVs (XZ plane)
@@ -103,7 +103,7 @@ pub fn fix_rabbit_textures(
 
             // Check for material
             if let Ok(mat_handle) = material_query.get(curr) {
-                let handle_id = mat_handle.id();
+                let _handle_id = mat_handle.id();
                 
                 // Strategy Switch: Create a NEW material and replace the component
                 let new_material = StandardMaterial {
@@ -167,7 +167,7 @@ pub fn fix_rabbit_textures(
                                     let center_z = (min_z + max_z) / 2.0;
                                     let center_y = (min_y + max_y) / 2.0;
 
-                                    let height = max_y - min_y;
+                                    let _height = max_y - min_y;
                                     // Use Box Radius for spherical approximation
                                     let _radius = ((max_x - min_x).max(max_z - min_z)) / 2.0;
 

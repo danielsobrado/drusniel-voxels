@@ -1,7 +1,7 @@
 pub mod grass_material;
 
 use crate::camera::controller::PlayerCamera;
-use crate::constants::CHUNK_SIZE;
+// use crate::constants::CHUNK_SIZE;
 use crate::rendering::materials::WaterMaterial;
 use crate::voxel::meshing::ChunkMesh;
 use crate::voxel::plugin::WATER_LEVEL;
