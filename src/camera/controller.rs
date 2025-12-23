@@ -6,13 +6,15 @@ use crate::rendering::ray_tracing::RayTracingSettings;
 use crate::voxel::types::Voxel;
 use crate::voxel::world::VoxelWorld;
 use bevy::prelude::*;
-use bevy::core_pipeline::tonemapping::Tonemapping;
+use bevy::anti_alias::contrast_adaptive_sharpening::ContrastAdaptiveSharpening;
+use bevy::anti_alias::smaa::{Smaa, SmaaPreset};
 use bevy::anti_alias::taa::TemporalAntiAliasing;
+use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy::input::mouse::MouseMotion;
+use bevy::light::ShadowFilteringMethod;
 use bevy::pbr::{DistanceFog, FogFalloff, ScreenSpaceAmbientOcclusion, ScreenSpaceReflections};
-use bevy::post_process::bloom::Bloom;
-// HDR might be in post_process or camera
-// use bevy::post_process::Hdr; 
+use bevy::post_process::bloom::{Bloom, BloomCompositeMode};
+use bevy::render::view::Hdr;
 
 use bevy::window::{CursorGrabMode, CursorOptions};
 
@@ -74,16 +76,24 @@ pub fn spawn_camera(
     let mut camera = commands.spawn((
         Camera3d::default(),
         Camera::default(),
-        // Camera3dHdr, // Still need to find the correct type
+        Hdr,
+        Msaa::Off,
         Bloom {
-            intensity: 0.1, // Subtle glow on bright highlights
+            intensity: 0.15, // Subtle glow on bright highlights
+            composite_mode: BloomCompositeMode::EnergyConserving,
             ..default()
         },
         Transform::from_xyz(256.0, 50.0, 256.0).looking_at(Vec3::new(200.0, 30.0, 200.0), Vec3::Y),
         PlayerCamera::default(),
         // Tonemapping for better HDR look
-        Tonemapping::AcesFitted,
-        ScreenSpaceAmbientOcclusion::default(),
+        Tonemapping::TonyMcMapface,
+        DebandDither::Enabled,
+        ScreenSpaceAmbientOcclusion {
+            quality_level: bevy::pbr::ScreenSpaceAmbientOcclusionQualityLevel::High,
+            constant_object_thickness: 0.5,
+            ..default()
+        },
+        ShadowFilteringMethod::Gaussian,
         // Atmospheric fog with warm/pink horizon tint
         DistanceFog {
             color: Color::srgba(0.7, 0.8, 0.95, 1.0), // Soft blue-gray base
@@ -94,7 +104,16 @@ pub fn spawn_camera(
     ));
 
     if capabilities.taa_supported {
-        camera.insert((TemporalAntiAliasing::default(), Msaa::Off));
+        camera.insert((
+            TemporalAntiAliasing::default(),
+            ContrastAdaptiveSharpening {
+                enabled: true,
+                sharpening_strength: 0.6,
+                denoise: false,
+            },
+        ));
+    } else {
+        camera.insert(Smaa { preset: SmaaPreset::High });
     }
 
     if ray_tracing.enabled && capabilities.ray_tracing_supported {

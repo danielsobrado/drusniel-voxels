@@ -1,3 +1,4 @@
+use bevy::light::{CascadeShadowConfigBuilder, DirectionalLightShadowMap};
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
 use bevy_water::*;
@@ -58,6 +59,7 @@ impl Plugin for AtmospherePlugin {
         app.insert_resource(AtmosphereSettings::default())
             // Soft initial sky tint
             .insert_resource(ClearColor(Color::srgba(0.50, 0.64, 0.84, 1.0)))
+            .insert_resource(DirectionalLightShadowMap { size: 4096 })
             // bevy_water for dynamic ocean waves
             .insert_resource(WaterSettings {
                 height: SEA_LEVEL,
@@ -82,12 +84,23 @@ fn setup_atmosphere(mut commands: Commands) {
     commands.spawn((
         DirectionalLight {
             color: Color::srgba(1.0, 0.93, 0.82, 1.0),
-            illuminance: 15_000.0,
+            illuminance: 32_000.0,
             shadows_enabled: true,
+            shadow_depth_bias: 0.02,
+            shadow_normal_bias: 1.8,
             ..default()
         },
         Transform::from_translation(Vec3::ZERO)
             .looking_to(Vec3::new(-0.3, -1.0, -0.2).normalize(), Vec3::Y),
+        CascadeShadowConfigBuilder {
+            num_cascades: 4,
+            minimum_distance: 1.0,
+            maximum_distance: 256.0,
+            first_cascade_far_bound: 15.0,
+            overlap_proportion: 0.2,
+            ..default()
+        }
+        .build(),
         Sun,
     ));
 }
