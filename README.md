@@ -34,6 +34,8 @@
 *   **M**: Toggle Map Overlay
 *   **Shift + M**: Toggle Edit Mode
 *   **G**: Print Debug Voxel Info (Console Log)
+*   **F3**: Enter Debug Mode
+
 
 ### Movement
 *   **W / A / S / D**: Move Forward, Left, Back, Right
