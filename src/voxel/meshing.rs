@@ -341,28 +341,6 @@ fn get_face_atlas_index(voxel: VoxelType, face: Face) -> u8 {
     }
 }
 
-/// Get UV rotation (0-3) based on world position to break up tiling patterns
-/// Returns rotation: 0=0°, 1=90°, 2=180°, 3=270°
-fn get_uv_rotation(world_x: i32, world_y: i32, world_z: i32) -> u8 {
-    // Use a simple hash of position to get pseudo-random rotation
-    let hash = world_x.wrapping_mul(73856093)
-        ^ world_y.wrapping_mul(19349663)
-        ^ world_z.wrapping_mul(83492791);
-    (hash as u8) & 3 // Returns 0, 1, 2, or 3
-}
-
-/// Apply UV rotation to break up tiling patterns
-/// rotation: 0=0°, 1=90°, 2=180°, 3=270°
-fn rotate_uvs(uvs: [[f32; 2]; 4], rotation: u8) -> [[f32; 2]; 4] {
-    match rotation {
-        0 => uvs,                                    // No rotation
-        1 => [uvs[3], uvs[0], uvs[1], uvs[2]],      // 90° CW
-        2 => [uvs[2], uvs[3], uvs[0], uvs[1]],      // 180°
-        3 => [uvs[1], uvs[2], uvs[3], uvs[0]],      // 270° CW
-        _ => uvs,
-    }
-}
-
 fn add_face_with_ao(
     mesh_data: &mut MeshData,
     chunk: &Chunk,
@@ -701,93 +679,6 @@ fn generate_water_sdf(chunk: &Chunk, world: &VoxelWorld) -> [f32; 5832] {
     }
 
     smoothed
-}
-
-/// Sample the voxel type at a world position for texture lookup
-fn sample_voxel_for_texture(chunk: &Chunk, world: &VoxelWorld, local_pos: Vec3) -> VoxelType {
-    // Convert local position to world position for accurate sampling
-    // This handles positions outside the [0,15] range due to Surface Nets padding
-    let chunk_origin = VoxelWorld::chunk_to_world(chunk.position());
-    let world_pos = IVec3::new(
-        chunk_origin.x + local_pos.x.round() as i32,
-        chunk_origin.y + local_pos.y.round() as i32,
-        chunk_origin.z + local_pos.z.round() as i32,
-    );
-
-    // First try exact position
-    if let Some(voxel) = world.get_voxel(world_pos) {
-        if voxel.is_solid() {
-            return voxel;
-        }
-    }
-
-    // If we hit air/water, search nearby for a solid voxel
-    // Prioritize searching upward first (more likely to find terrain surface)
-    for dy in [0i32, -1, 1, -2, 2] {
-        for dx in [-1i32, 0, 1] {
-            for dz in [-1i32, 0, 1] {
-                if dx == 0 && dy == 0 && dz == 0 {
-                    continue; // Already checked
-                }
-                let check_pos = world_pos + IVec3::new(dx, dy, dz);
-                if let Some(v) = world.get_voxel(check_pos) {
-                    if v.is_solid() {
-                        return v;
-                    }
-                }
-            }
-        }
-    }
-    VoxelType::TopSoil // Default fallback
-}
-
-/// Compute planar UV coordinates in world space that tile within an atlas tile
-fn compute_triplanar_uv(world_pos: Vec3, normal: [f32; 3], atlas_idx: u8) -> [f32; 2] {
-    let cols = 4.0f32;
-    let rows = 4.0f32;
-    let col = (atlas_idx % 4) as f32;
-    let row = (atlas_idx / 4) as f32;
-
-    // UV padding to prevent bleeding
-    let padding = 0.03;
-    let tile_size = 1.0 / cols - padding * 2.0;
-    let u_base = col / cols + padding;
-    let v_base = row / rows + padding;
-
-    // Use normal to determine dominant axis for projection
-    let abs_normal = [normal[0].abs(), normal[1].abs(), normal[2].abs()];
-
-    let (u_world, v_world) = if abs_normal[1] > abs_normal[0] && abs_normal[1] > abs_normal[2] {
-        // Top/bottom face - use X and Z
-        (world_pos.x, world_pos.z)
-    } else if abs_normal[0] > abs_normal[2] {
-        // East/west face - use Z and Y
-        (world_pos.z, world_pos.y)
-    } else {
-        // North/south face - use X and Y
-        (world_pos.x, world_pos.y)
-    };
-
-    // World-space scale so the pattern stays continuous across chunks
-    let tex_scale = 1.0 / 4.0; // 1 tile per 4 world units
-
-    // Get fractional part, handling negative values correctly
-    // rem_euclid ensures we always get a positive value in [0, 1)
-    let u_frac = (u_world * tex_scale).rem_euclid(1.0);
-    let v_frac = (v_world * tex_scale).rem_euclid(1.0);
-
-    // Clamp to ensure we stay within tile bounds (avoid edge sampling issues)
-    let u_clamped = u_frac.clamp(0.01, 0.99);
-    let v_clamped = v_frac.clamp(0.01, 0.99);
-
-    let u = u_base + u_clamped * tile_size;
-    let v = v_base + v_clamped * tile_size;
-
-    // Final safety clamp to ensure valid UV coordinates
-    [
-        u.clamp(0.001, 0.999),
-        v.clamp(0.001, 0.999),
-    ]
 }
 
 /// Generate mesh using Surface Nets algorithm for smooth terrain

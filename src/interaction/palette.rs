@@ -65,31 +65,31 @@ pub struct Bookmark {
 }
 
 #[derive(Component)]
-struct PaletteRoot;
+pub struct PaletteRoot;
 
 #[derive(Component)]
-struct PaletteList;
+pub struct PaletteList;
 
 #[derive(Component)]
-struct PaletteSearchText;
+pub struct PaletteSearchText;
 
 #[derive(Component)]
-struct PaletteSelectionText;
+pub struct PaletteSelectionText;
 
 #[derive(Component)]
-struct PaletteItemButton(usize);
+pub struct PaletteItemButton(usize);
 
 #[derive(Component)]
-struct SaveBookmarkButton;
+pub struct SaveBookmarkButton;
 
 #[derive(Component)]
-struct BookmarkList;
+pub struct BookmarkList;
 
 #[derive(Component)]
-struct BookmarkTeleportButton(usize);
+pub struct BookmarkTeleportButton(usize);
 
 #[derive(Component)]
-struct BookmarkDeleteButton(usize);
+pub struct BookmarkDeleteButton(usize);
 
 pub fn initialize_palette_items(
     mut items: ResMut<PaletteItems>,

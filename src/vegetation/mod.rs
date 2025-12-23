@@ -44,6 +44,17 @@ pub struct ParticlesSpawned(pub bool);
 #[derive(Resource, Default)]
 pub struct TreesSpawned(pub bool);
 
+#[derive(Resource)]
+pub struct VegetationConfig {
+    pub grass_density: u32,
+}
+
+impl Default for VegetationConfig {
+    fn default() -> Self {
+        Self { grass_density: 20 }
+    }
+}
+
 /// Marker that a voxel chunk mesh already has a procedural grass instance attached
 #[derive(Component)]
 pub struct ChunkGrassAttached;
@@ -112,6 +123,7 @@ pub fn setup_grass_patch_assets(
 pub fn attach_procedural_grass_to_chunks(
     mut commands: Commands,
     assets: Res<GrassPatchAssets>,
+    config: Res<VegetationConfig>,
     water_material: Res<WaterMaterial>,
     mut meshes: ResMut<Assets<Mesh>>,
     // Query chunks with StandardMaterial (blocky mode)
@@ -152,6 +164,7 @@ pub fn attach_procedural_grass_to_chunks(
             chunk,
             chunk_mesh,
             transform,
+            config.grass_density,
         );
     }
 
@@ -165,6 +178,7 @@ pub fn attach_procedural_grass_to_chunks(
             chunk,
             chunk_mesh,
             transform,
+            config.grass_density,
         );
     }
 }
@@ -178,13 +192,14 @@ fn process_chunk_for_grass(
     chunk: &ChunkMesh,
     chunk_mesh: &Mesh3d,
     transform: &Transform,
+    density: u32,
 ) {
     let Some(chunk_source_mesh) = meshes.get(&chunk_mesh.0) else {
         return;
     };
 
     // Density: blades per square unit; max_count: limit per chunk
-    let instances = collect_grass_instances(chunk_source_mesh, transform, 20, 2000);
+    let instances = collect_grass_instances(chunk_source_mesh, transform, density, 2000);
     if instances.is_empty() {
         return;
     }
@@ -1105,6 +1120,7 @@ impl Plugin for VegetationPlugin {
             .init_resource::<RocksSpawned>()
             .init_resource::<ParticlesSpawned>()
             .init_resource::<TreesSpawned>()
+            .init_resource::<VegetationConfig>()
             .add_systems(Startup, setup_grass_patch_assets)
             // Run in Update to ensure world is populated
             .add_systems(

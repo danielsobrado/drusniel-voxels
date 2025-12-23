@@ -4,6 +4,7 @@ use crate::menu::PauseMenuState;
 use crate::network::NetworkSession;
 use crate::voxel::types::{Voxel, VoxelType};
 use crate::voxel::world::VoxelWorld;
+use crate::particles::{SpawnParticleEvent, ParticleType};
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
@@ -231,6 +232,7 @@ pub fn break_block_system(
     targeted_entity: Res<TargetedEntity>,
     mut world: ResMut<VoxelWorld>,
     mut held: ResMut<HeldBlock>,
+    mut particle_events: EventWriter<SpawnParticleEvent>,
 ) {
     if edit_mode.enabled {
         return;
@@ -250,6 +252,13 @@ pub fn break_block_system(
 
                 // Mark neighboring chunks dirty too (for proper mesh updates at edges)
                 mark_neighbors_dirty(&mut world, pos);
+
+                // Spawn digging particles
+                let center = Vec3::new(pos.x as f32 + 0.5, pos.y as f32 + 0.5, pos.z as f32 + 0.5);
+                particle_events.write(SpawnParticleEvent {
+                    position: center,
+                    particle_type: ParticleType::Dig,
+                });
             }
         }
     }

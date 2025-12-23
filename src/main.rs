@@ -12,6 +12,8 @@ use voxel_builder::rendering::plugin::RenderingPlugin;
 use voxel_builder::vegetation::VegetationPlugin;
 use voxel_builder::viewmodel::PickaxePlugin;
 use voxel_builder::voxel::plugin::VoxelPlugin;
+use voxel_builder::debug_ui::DebugUiPlugin;
+use voxel_builder::particles::ParticlePlugin;
 
 fn main() {
     App::new()
@@ -29,5 +31,7 @@ fn main() {
         .add_plugins(PropsPlugin)
         .add_plugins(AtmospherePlugin)
         .add_plugins(EntityPlugin)
+        .add_plugins(DebugUiPlugin)
+        .add_plugins(ParticlePlugin)
         .run();
 }

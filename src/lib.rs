@@ -13,3 +13,5 @@ pub mod rendering;
 pub mod vegetation;
 pub mod viewmodel;
 pub mod voxel;
+pub mod debug_ui;
+pub mod particles;
