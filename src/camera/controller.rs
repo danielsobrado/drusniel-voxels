@@ -6,11 +6,11 @@ use crate::rendering::ray_tracing::RayTracingSettings;
 use crate::voxel::types::Voxel;
 use crate::voxel::world::VoxelWorld;
 use bevy::anti_alias::taa::TemporalAntiAliasing;
+use bevy::core_pipeline::bloom::Bloom;
 use bevy::core_pipeline::Skybox;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::input::mouse::MouseMotion;
-use bevy::pbr::{DistanceFog, FogFalloff, ScreenSpaceReflections};
-use bevy::post_process::bloom::Bloom;
+use bevy::pbr::{DistanceFog, FogFalloff, ScreenSpaceAmbientOcclusion, ScreenSpaceReflections};
 use bevy::prelude::*;
 use bevy::render::view::Msaa;
 use bevy::window::{CursorGrabMode, CursorOptions};
@@ -81,14 +81,16 @@ pub fn spawn_camera(
 
     let mut camera = commands.spawn((
         Camera3d::default(),
+        Camera { hdr: true, ..default() },
         Bloom {
-            intensity: 0.06, // Subtle glow on bright highlights
+            intensity: 0.1, // Subtle glow on bright highlights
             ..default()
         },
         Transform::from_xyz(256.0, 50.0, 256.0).looking_at(Vec3::new(200.0, 30.0, 200.0), Vec3::Y),
         PlayerCamera::default(),
         // Tonemapping for better HDR look
         Tonemapping::AcesFitted,
+        ScreenSpaceAmbientOcclusion::default(),
         // Skybox with the cubemap
         Skybox {
             image: skybox_image,
