@@ -97,6 +97,7 @@ pub struct SettingsState {
     pub night_brightness: NightBrightnessOption,
     pub fog_preset: FogPresetOption,
     pub cycle_enabled: bool,
+    pub shadow_filtering: ShadowFiltering,
 }
 
 impl Default for SettingsState {
@@ -119,9 +120,20 @@ impl Default for SettingsState {
             night_brightness: NightBrightnessOption::Balanced,
             fog_preset: FogPresetOption::Balanced,
             cycle_enabled: true,
+            shadow_filtering: ShadowFiltering::Gaussian,
         }
     }
 }
+
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
+pub enum ShadowFiltering {
+    Gaussian,
+    Hardware2x2,
+    Temporal,
+}
+
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
+struct ShadowFilteringOption(pub ShadowFiltering);
 
 #[derive(Component, Copy, Clone, Eq, PartialEq)]
 struct DayNightCycleOption(pub bool);
@@ -370,6 +382,7 @@ impl Plugin for PauseMenuPlugin {
                     update_settings_ray_tracing_backgrounds,
                     update_settings_display_mode_backgrounds,
                     update_settings_resolution_backgrounds,
+                    update_settings_shadow_filtering_backgrounds,
                     update_day_length_backgrounds,
                 ),
             )
@@ -871,6 +884,43 @@ fn spawn_settings_dialog(
                                     font,
                                     "MSAA 4x",
                                     AntiAliasingOption(AntiAliasing::Msaa4x),
+                                );
+                            });
+
+                        graphics.spawn((
+                            Text::new("Shadow Filtering"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 20.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
+
+                        graphics
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Row,
+                                column_gap: Val::Px(8.0),
+                                ..default()
+                            })
+                            .with_children(|row| {
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "Gaussian",
+                                    ShadowFilteringOption(ShadowFiltering::Gaussian),
+                                );
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "Hard 2x2",
+                                    ShadowFilteringOption(ShadowFiltering::Hardware2x2),
+                                );
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "Temporal",
+                                    ShadowFilteringOption(ShadowFiltering::Temporal),
                                 );
                             });
 
@@ -1750,6 +1800,10 @@ fn handle_graphics_settings(
         (Changed<Interaction>, With<Button>),
     >,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
+    mut shadow_filtering_query: Query<
+        (&Interaction, &ShadowFilteringOption),
+        (Changed<Interaction>, With<Button>),
+    >,
 ) {
     if !state.open || settings_state.dialog_root.is_none() {
         return;
@@ -1776,6 +1830,12 @@ fn handle_graphics_settings(
 
             settings_state.ray_tracing = option.0;
             ray_tracing_settings.enabled = option.0;
+        }
+    }
+
+    for (interaction, option) in shadow_filtering_query.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            settings_state.shadow_filtering = option.0;
         }
     }
 
@@ -2129,6 +2189,25 @@ fn update_settings_display_mode_backgrounds(
             DisplayModeOption::Fullscreen => settings_state.display_mode == DisplayMode::Fullscreen,
         };
 
+        *background = if active {
+            Color::srgba(0.32, 0.42, 0.35, 0.95).into()
+        } else {
+            Color::srgba(0.2, 0.2, 0.2, 0.9).into()
+        };
+    }
+}
+
+
+fn update_settings_shadow_filtering_backgrounds(
+    settings_state: Res<SettingsState>,
+    mut query: Query<(&ShadowFilteringOption, &mut BackgroundColor)>,
+) {
+    if settings_state.dialog_root.is_none() {
+        return;
+    }
+
+    for (option, mut background) in query.iter_mut() {
+        let active = settings_state.shadow_filtering == option.0;
         *background = if active {
             Color::srgba(0.32, 0.42, 0.35, 0.95).into()
         } else {

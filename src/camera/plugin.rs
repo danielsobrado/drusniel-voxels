@@ -1,4 +1,7 @@
-use crate::camera::controller::{player_camera_system, spawn_camera, update_ray_tracing_on_camera};
+use crate::camera::controller::{
+    player_camera_system, spawn_camera, update_camera_shadow_filtering,
+    update_ray_tracing_on_camera,
+};
 use crate::rendering::capabilities::GraphicsDetectionSet;
 use crate::atmosphere::FogCamera;
 use bevy::prelude::*;
@@ -14,7 +17,14 @@ impl Plugin for CameraPlugin {
                 .chain()
                 .after(GraphicsDetectionSet),
         )
-        .add_systems(Update, (player_camera_system, update_ray_tracing_on_camera));
+        .add_systems(
+            Update,
+            (
+                player_camera_system,
+                update_ray_tracing_on_camera,
+                update_camera_shadow_filtering,
+            ),
+        );
     }
 }
 

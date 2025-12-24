@@ -83,10 +83,10 @@ impl Plugin for AtmospherePlugin {
 }
 
 fn setup_atmosphere(mut commands: Commands) {
-    // Sun directional light with extended shadow range
+    // Sun directional light with warmer color and tuned settings
     commands.spawn((
         DirectionalLight {
-            color: Color::srgba(1.0, 0.93, 0.82, 1.0),
+            color: Color::srgb(1.0, 0.95, 0.85),
             illuminance: 32_000.0,
             shadows_enabled: true,
             shadow_depth_bias: 0.02,

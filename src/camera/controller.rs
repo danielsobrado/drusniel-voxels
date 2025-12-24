@@ -82,7 +82,11 @@ pub fn spawn_camera(
         Msaa::Off,
         Transform::from_xyz(256.0, 50.0, 256.0).looking_at(Vec3::new(200.0, 30.0, 200.0), Vec3::Y),
         PlayerCamera::default(),
-        ShadowFilteringMethod::Gaussian,
+        match crate::menu::SettingsState::default().shadow_filtering {
+            crate::menu::ShadowFiltering::Gaussian => ShadowFilteringMethod::Gaussian,
+            crate::menu::ShadowFiltering::Hardware2x2 => ShadowFilteringMethod::Hardware2x2,
+            crate::menu::ShadowFiltering::Temporal => ShadowFilteringMethod::Temporal,
+        },
         fog_camera_components(&fog_config),
     ));
 
@@ -119,6 +123,23 @@ pub fn spawn_camera(
 
     if ray_tracing.enabled && capabilities.ray_tracing_supported {
         camera.insert(ScreenSpaceReflections::default());
+    }
+}
+
+pub fn update_camera_shadow_filtering(
+    settings_state: Res<crate::menu::SettingsState>,
+    mut camera_query: Query<&mut ShadowFilteringMethod, With<PlayerCamera>>,
+) {
+    if !settings_state.is_changed() {
+        return;
+    }
+
+    for mut method in camera_query.iter_mut() {
+        *method = match settings_state.shadow_filtering {
+            crate::menu::ShadowFiltering::Gaussian => ShadowFilteringMethod::Gaussian,
+            crate::menu::ShadowFiltering::Hardware2x2 => ShadowFilteringMethod::Hardware2x2,
+            crate::menu::ShadowFiltering::Temporal => ShadowFilteringMethod::Temporal,
+        };
     }
 }
 
