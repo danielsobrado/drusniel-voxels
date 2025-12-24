@@ -13,8 +13,7 @@ use bevy::ui::{
     AlignItems, AlignSelf, FlexDirection, JustifyContent, 
     UiRect, Val,
 };
-use bevy::prelude::MessageReader;
-use bevy::ecs::hierarchy::ChildSpawnerCommands;
+
 use std::net::ToSocketAddrs;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{Arc, Mutex};
@@ -56,10 +55,27 @@ enum ConnectOutcome {
 }
 
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct PauseMenuState {
     pub open: bool,
     pub root_entity: Option<Entity>,
+    pub current_screen: MenuScreen,
+}
+
+impl Default for PauseMenuState {
+    fn default() -> Self {
+        Self {
+            open: false,
+            root_entity: None,
+            current_screen: MenuScreen::Main,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum MenuScreen {
+    Main,
+    Multiplayer,
 }
 
 #[derive(Resource, Clone)]
@@ -245,9 +261,11 @@ enum PauseMenuButton {
     Save,
     Load,
     Settings,
+    Multiplayer,
     StartServer,
     Connect,
     SaveFavorite,
+    BackToMain,
     Resume,
 }
 
@@ -417,192 +435,206 @@ fn open_menu(
             PauseMenuRoot,
         ))
         .with_children(|parent| {
-            parent
-                .spawn((
-                    Node {
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::Stretch,
-                        row_gap: Val::Px(16.0),
-                        padding: UiRect::all(Val::Px(20.0)),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.8)),
-                ))
-                .with_children(|menu| {
-                    menu.spawn((
-                        Text::new("Paused"),
-                        TextFont {
-                            font: font.clone(),
-                            font_size: 30.0,
-                            ..default()
-                        },
-                        TextColor(Color::WHITE),
-                    ));
-
-                    // Save Button
-                    menu.spawn((
-                        Button,
-                        Node {
-                            width: Val::Px(160.0),
-                            padding: UiRect::all(Val::Px(12.0)),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgba(0.25, 0.25, 0.25, 0.9)),
-                        PauseMenuButton::Save,
-                    ))
-                    .with_children(|button| {
-                        button.spawn((
-                            Text::new("Save"),
-                            TextFont {
-                                font: font.clone(),
-                                font_size: 20.0,
-                                ..default()
-                            },
-                            TextColor(Color::WHITE),
-                        ));
-                    });
-
-
-                    menu.spawn(Node {
-                        flex_direction: FlexDirection::Row,
-                        column_gap: Val::Px(12.0),
-                        ..default()
-                    })
-                    .with_children(|row| {
-                        // The type is inferred as &mut RelatedSpawnerCommands (or similar helper)
-                        // but spawn_button expects ChildSpawner (RelatedSpawner).
-                        // We need to match what spawn_button expects or change spawn_button.
-                        // I will change spawn_button signature in next step if this fails,
-                        // but first let's try to remove the type annotation and see what inference says.
-                        spawn_button(row, &font, "Save", PauseMenuButton::Save);
-                        spawn_button(row, &font, "Load", PauseMenuButton::Load);
-                        spawn_button(row, &font, "Settings", PauseMenuButton::Settings);
-                    });
-
-                    menu.spawn((
-                        Node {
-                            flex_direction: FlexDirection::Column,
-                            row_gap: Val::Px(10.0),
-                            padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
-                            ..default()
-                        },
-                        BackgroundColor(Color::NONE),
-                    ))
-                    .with_children(|section| {
-                        section.spawn((
-                            Text::new("Host Game"),
-                            TextFont {
-                                font: font.clone(),
-                                font_size: 22.0,
-                                ..default()
-                            },
-                            TextColor(Color::WHITE),
-                        ));
-
-                        spawn_labeled_input(
-                            section,
-                            &font,
-                            "Session Password",
-                            "Required for clients",
-                            MultiplayerField::HostPassword,
-                        );
-
-                        spawn_button(section, &font, "Start Server", PauseMenuButton::StartServer);
-                    });
-
-                    menu.spawn(Node {
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(10.0),
-                        padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
-                        ..default()
-                    })
-                    .with_children(|section| {
-                        section.spawn((
-                            Text::new("Join Game"),
-                            TextFont {
-                                font: font.clone(),
-                                font_size: 22.0,
-                                ..default()
-                            },
-                            TextColor(Color::WHITE),
-                        ));
-
-                        spawn_labeled_input(
-                            section,
-                            &font,
-                            "Host IP",
-                            "Enter IPv4 or IPv6",
-                            MultiplayerField::JoinIp,
-                        );
-                        spawn_labeled_input(
-                            section,
-                            &font,
-                            "Port",
-                            "e.g. 7777",
-                            MultiplayerField::JoinPort,
-                        );
-                        spawn_labeled_input(
-                            section,
-                            &font,
-                            "Password",
-                            "Session password",
-                            MultiplayerField::JoinPassword,
-                        );
-
-                        section
-                            .spawn(Node {
-                                flex_direction: FlexDirection::Row,
-                                column_gap: Val::Px(10.0),
-                                ..default()
-                            })
-                            .with_children(|row| {
-                                spawn_button(row, &font, "Connect", PauseMenuButton::Connect);
-                                spawn_button(
-                                    row,
-                                    &font,
-                                    "Save Favorite",
-                                    PauseMenuButton::SaveFavorite,
-                                );
-                            });
-
-                        section
-                            .spawn((
-                                Node {
-                                    flex_direction: FlexDirection::Column,
-                                    row_gap: Val::Px(6.0),
-                                    padding: UiRect::axes(Val::Px(6.0), Val::Px(4.0)),
-                                    ..default()
-                                },
-                                BackgroundColor(Color::srgba(0.05, 0.05, 0.05, 0.8)),
-                                FavoritesList,
-                            ))
-                            .with_children(|favorites| {
-                                favorites.spawn((
-                                    Text::new("Favorite Servers"),
-                                    TextFont {
-                                        font: font.clone(),
-                                        font_size: 18.0,
-                                        ..default()
-                                    },
-                                    TextColor(Color::WHITE),
-                                ));
-
-                                for (index, favorite) in form_state.favorites.iter().enumerate() {
-                                    spawn_favorite_button(favorites, &font, index, favorite);
-                                }
-                            });
-                    });
-
-                    spawn_button(menu, &font, "Resume", PauseMenuButton::Resume);
-
-                });
+            match state.current_screen {
+                MenuScreen::Main => {
+                    spawn_main_menu(parent, &font);
+                }
+                MenuScreen::Multiplayer => {
+                    spawn_multiplayer_menu(parent, &font, form_state);
+                }
+            }
         })
         .id();
 
     state.root_entity = Some(root);
     state.open = true;
+}
+
+fn spawn_main_menu(parent: &mut ChildSpawnerCommands, font: &Handle<Font>) {
+    parent
+        .spawn((
+            Node {
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                row_gap: Val::Px(16.0),
+                padding: UiRect::all(Val::Px(30.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.9)),
+        ))
+        .with_children(|menu| {
+            // Title
+            menu.spawn((
+                Text::new("Game Menu"),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 32.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+            ));
+
+            // Main menu buttons
+            spawn_button(menu, font, "Load", PauseMenuButton::Load);
+            spawn_button(menu, font, "Save", PauseMenuButton::Save);
+            spawn_button(menu, font, "Multiplayer", PauseMenuButton::Multiplayer);
+            spawn_button(menu, font, "Settings", PauseMenuButton::Settings);
+            spawn_button(menu, font, "Resume", PauseMenuButton::Resume);
+        });
+}
+
+fn spawn_multiplayer_menu(
+    parent: &mut ChildSpawnerCommands,
+    font: &Handle<Font>,
+    form_state: &MultiplayerFormState,
+) {
+    parent
+        .spawn((
+            Node {
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Stretch,
+                row_gap: Val::Px(16.0),
+                padding: UiRect::all(Val::Px(30.0)),
+                max_width: Val::Px(500.0),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.9)),
+        ))
+        .with_children(|menu| {
+            // Title
+            menu.spawn((
+                Text::new("Multiplayer"),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 32.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+            ));
+
+            // Host Game Section
+            menu.spawn((
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(10.0),
+                    padding: UiRect::all(Val::Px(16.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.15, 0.15, 0.15, 0.8)),
+            ))
+            .with_children(|section| {
+                section.spawn((
+                    Text::new("Host Game"),
+                    TextFont {
+                        font: font.clone(),
+                        font_size: 22.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                ));
+
+                spawn_labeled_input(
+                    section,
+                    font,
+                    "Session Password",
+                    "Required for clients",
+                    MultiplayerField::HostPassword,
+                );
+
+                spawn_button(section, font, "Start Server", PauseMenuButton::StartServer);
+            });
+
+            // Join Game Section
+            menu.spawn((
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(10.0),
+                    padding: UiRect::all(Val::Px(16.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.15, 0.15, 0.15, 0.8)),
+            ))
+            .with_children(|section| {
+                section.spawn((
+                    Text::new("Join Game"),
+                    TextFont {
+                        font: font.clone(),
+                        font_size: 22.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                ));
+
+                spawn_labeled_input(
+                    section,
+                    font,
+                    "Host IP",
+                    "Enter IPv4 or IPv6",
+                    MultiplayerField::JoinIp,
+                );
+                spawn_labeled_input(
+                    section,
+                    font,
+                    "Port",
+                    "e.g. 7777",
+                    MultiplayerField::JoinPort,
+                );
+                spawn_labeled_input(
+                    section,
+                    font,
+                    "Password",
+                    "Session password",
+                    MultiplayerField::JoinPassword,
+                );
+
+                section
+                    .spawn(Node {
+                        flex_direction: FlexDirection::Row,
+                        column_gap: Val::Px(10.0),
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        spawn_button(row, font, "Connect", PauseMenuButton::Connect);
+                        spawn_button(
+                            row,
+                            font,
+                            "Save Favorite",
+                            PauseMenuButton::SaveFavorite,
+                        );
+                    });
+
+                // Favorites List
+                section
+                    .spawn((
+                        Node {
+                            flex_direction: FlexDirection::Column,
+                            row_gap: Val::Px(6.0),
+                            padding: UiRect::all(Val::Px(8.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.05, 0.05, 0.05, 0.8)),
+                        FavoritesList,
+                    ))
+                    .with_children(|favorites| {
+                        favorites.spawn((
+                            Text::new("Favorite Servers"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 18.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
+
+                        for (index, favorite) in form_state.favorites.iter().enumerate() {
+                            spawn_favorite_button(favorites, font, index, favorite);
+                        }
+                    });
+            });
+
+            // Back button
+            spawn_button(menu, font, "Back", PauseMenuButton::BackToMain);
+        });
 }
 
 
@@ -1345,6 +1377,7 @@ fn close_menu(
     close_settings_dialog(commands, settings_state);
     form_state.active_field = None;
     state.open = false;
+    state.current_screen = MenuScreen::Main;
 }
 
 fn handle_menu_buttons(
@@ -1487,6 +1520,58 @@ fn handle_menu_buttons(
                         capabilities.ray_tracing_supported,
                     ));
                 }
+            }
+            PauseMenuButton::Multiplayer => {
+                // Switch to multiplayer screen
+                state.current_screen = MenuScreen::Multiplayer;
+                // Close and reopen menu to show multiplayer screen
+                if let Some(root) = state.root_entity {
+                    commands.entity(root).despawn();
+                }
+                let font = asset_server.load("fonts/FiraSans-Bold.ttf");
+                let root = commands
+                    .spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            height: Val::Percent(100.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+                        PauseMenuRoot,
+                    ))
+                    .with_children(|parent| {
+                        spawn_multiplayer_menu(parent, &font, &form_state);
+                    })
+                    .id();
+                state.root_entity = Some(root);
+            }
+            PauseMenuButton::BackToMain => {
+                // Switch back to main menu
+                state.current_screen = MenuScreen::Main;
+                // Close and reopen menu to show main screen
+                if let Some(root) = state.root_entity {
+                    commands.entity(root).despawn();
+                }
+                let font = asset_server.load("fonts/FiraSans-Bold.ttf");
+                let root = commands
+                    .spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            height: Val::Percent(100.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+                        PauseMenuRoot,
+                    ))
+                    .with_children(|parent| {
+                        spawn_main_menu(parent, &font);
+                    })
+                    .id();
+                state.root_entity = Some(root);
             }
             PauseMenuButton::SaveFavorite => {
                 if form_state.join_ip.is_empty() || form_state.join_port.is_empty() {
@@ -1721,6 +1806,7 @@ fn handle_atmosphere_settings(
     >,
     mut fog_query: Query<(&Interaction, &FogPresetOption), (Changed<Interaction>, With<Button>)>,
     mut atmosphere_settings: ResMut<AtmosphereSettings>,
+    mut fog_config: ResMut<crate::atmosphere::FogConfig>,
 ) {
     if !state.open || settings_state.dialog_root.is_none() {
         return;
@@ -1824,6 +1910,12 @@ fn handle_atmosphere_settings(
                 FogPresetOption::Clear => Vec2::new(0.0006, 0.0014),
                 FogPresetOption::Balanced => Vec2::new(0.0009, 0.0022),
                 FogPresetOption::Misty => Vec2::new(0.0012, 0.003),
+            };
+            // Also update volumetric fog density
+            fog_config.volume.density = match option {
+                FogPresetOption::Clear => 0.015,
+                FogPresetOption::Balanced => 0.04,
+                FogPresetOption::Misty => 0.08,
             };
         }
     }

@@ -1,4 +1,4 @@
-use bevy::light::{CascadeShadowConfigBuilder, DirectionalLightShadowMap};
+use bevy::light::{CascadeShadowConfigBuilder, DirectionalLightShadowMap, VolumetricLight};
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
 use bevy_water::*;
@@ -101,6 +101,7 @@ fn setup_atmosphere(mut commands: Commands) {
             ..default()
         }
         .build(),
+        VolumetricLight, // Enable god rays
         Sun,
     ));
 }

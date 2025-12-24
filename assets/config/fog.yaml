@@ -1,0 +1,51 @@
+# Fog configuration for Valheim-style atmosphere
+fog:
+  # Distance fog (screen-space, hides chunk boundaries)
+  distance:
+    # Should be ~80% of cull_distance to hide loading
+    visibility: 200.0
+    # Start fading at this distance
+    start: 80.0
+    # Full fog at this distance
+    end: 220.0
+    
+  # Volumetric fog (god rays, local volumes)
+  volumetric:
+    enabled: true
+    # Raymarching quality (32=fast, 64=quality, 128=ultra)
+    step_count: 64
+    # Jitter for TAA integration
+    jitter: 0.5
+    # Ambient intensity (0 if using environment maps)
+    ambient_intensity: 0.0
+    
+  # Global fog volume parameters
+  volume:
+    # Size in world units (should cover render distance)
+    size: 512.0
+    # Base density (0.02-0.1 for light haze, 0.1-0.3 for heavy)
+    density: 0.04
+    # Light absorption (0=no absorption, 1=full)
+    absorption: 0.08
+    # Light scattering (0=no scatter, 1=full)
+    scattering: 0.25
+    # Scattering asymmetry (-1 to 1, positive=forward scatter like mist)
+    scattering_asymmetry: 0.7
+    
+  # Day/night color presets
+  colors:
+    day:
+      fog: [0.55, 0.65, 0.80, 1.0]      # Blue-grey haze
+      extinction: [0.35, 0.50, 0.66]    # What light gets absorbed
+      inscattering: [0.80, 0.84, 1.00]  # Light scattered into view
+      directional: [1.0, 0.95, 0.85]    # Sun glow color
+    twilight:
+      fog: [0.65, 0.45, 0.40, 1.0]      # Warm orange haze
+      extinction: [0.50, 0.35, 0.30]
+      inscattering: [1.0, 0.70, 0.50]
+      directional: [1.0, 0.60, 0.30]
+    night:
+      fog: [0.08, 0.10, 0.15, 1.0]      # Dark blue
+      extinction: [0.05, 0.08, 0.12]
+      inscattering: [0.10, 0.15, 0.25]
+      directional: [0.6, 0.7, 0.9]      # Moonlight blue

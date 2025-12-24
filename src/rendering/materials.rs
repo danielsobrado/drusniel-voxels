@@ -1,5 +1,6 @@
 use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::prelude::*;
+use crate::rendering::capabilities::GraphicsCapabilities;
 use crate::rendering::triplanar_material::{TriplanarMaterial, TriplanarMaterialHandle, TriplanarUniforms};
 
 use crate::rendering::blocky_material::BlockyMaterial;
@@ -51,28 +52,54 @@ pub fn setup_water_material(
 pub fn setup_triplanar_material(
     mut commands: Commands,
     mut materials: ResMut<Assets<TriplanarMaterial>>,
+    capabilities: Option<Res<GraphicsCapabilities>>,
     asset_server: Res<AssetServer>,
 ) {
-    let material_handle = materials.add(TriplanarMaterial {
-        uniforms: TriplanarUniforms {
-            base_color: LinearRgba::WHITE,
-            tex_scale: 2.0,         // Higher resolution (1 tile per 2 world units)
-            blend_sharpness: 4.0,   // Moderate blend between projections
-            normal_intensity: 1.0,  // Full normal map strength
-            parallax_scale: 0.04,   // Subtle parallax depth
-        },
-        // Grass textures (for TopSoil top faces)
-        grass_albedo: Some(asset_server.load("pbr/grass/albedo.png")),
-        grass_normal: Some(asset_server.load("pbr/grass/normal.png")),
-        // Rock textures (for Rock, Bedrock, cliffs)
-        rock_albedo: Some(asset_server.load("pbr/rock/albedo.png")),
-        rock_normal: Some(asset_server.load("pbr/rock/normal.png")),
-        // Sand textures
-        sand_albedo: Some(asset_server.load("pbr/sand/albedo.png")),
-        sand_normal: Some(asset_server.load("pbr/sand/normal.png")),
-        // Dirt textures (for SubSoil, sides)
-        dirt_albedo: Some(asset_server.load("pbr/dirt/albedo.png")),
-        dirt_normal: Some(asset_server.load("pbr/dirt/normal.png")),
+    let integrated = capabilities
+        .as_ref()
+        .map(|capabilities| capabilities.integrated_gpu)
+        .unwrap_or(false);
+
+    let material_handle = materials.add(if integrated {
+        TriplanarMaterial {
+            uniforms: TriplanarUniforms {
+                base_color: LinearRgba::WHITE,
+                tex_scale: 2.0,
+                blend_sharpness: 4.0,
+                normal_intensity: 1.0,
+                parallax_scale: 0.0,
+            },
+            grass_albedo: None,
+            grass_normal: None,
+            rock_albedo: None,
+            rock_normal: None,
+            sand_albedo: None,
+            sand_normal: None,
+            dirt_albedo: None,
+            dirt_normal: None,
+        }
+    } else {
+        TriplanarMaterial {
+            uniforms: TriplanarUniforms {
+                base_color: LinearRgba::WHITE,
+                tex_scale: 2.0,         // Higher resolution (1 tile per 2 world units)
+                blend_sharpness: 4.0,   // Moderate blend between projections
+                normal_intensity: 1.0,  // Full normal map strength
+                parallax_scale: 0.04,   // Subtle parallax depth
+            },
+            // Grass textures (for TopSoil top faces)
+            grass_albedo: Some(asset_server.load("pbr/grass/albedo.png")),
+            grass_normal: Some(asset_server.load("pbr/grass/normal.png")),
+            // Rock textures (for Rock, Bedrock, cliffs)
+            rock_albedo: Some(asset_server.load("pbr/rock/albedo.png")),
+            rock_normal: Some(asset_server.load("pbr/rock/normal.png")),
+            // Sand textures
+            sand_albedo: Some(asset_server.load("pbr/sand/albedo.png")),
+            sand_normal: Some(asset_server.load("pbr/sand/normal.png")),
+            // Dirt textures (for SubSoil, sides)
+            dirt_albedo: Some(asset_server.load("pbr/dirt/albedo.png")),
+            dirt_normal: Some(asset_server.load("pbr/dirt/normal.png")),
+        }
     });
 
     commands.insert_resource(TriplanarMaterialHandle {

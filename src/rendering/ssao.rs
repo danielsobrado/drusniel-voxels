@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy::pbr::ScreenSpaceAmbientOcclusion;
-use bevy::render::renderer::{RenderAdapterInfo, WgpuDeviceType};
+use bevy::render::renderer::RenderAdapterInfo;
 
 use crate::rendering::ao_config::{AmbientOcclusionConfig, load_ambient_occlusion_config};
 
@@ -48,7 +48,7 @@ fn detect_ssao_support(
         let name = adapter_name.to_lowercase();
         is_integrated = name.contains("intel")
             || name.contains("integrated")
-            || info.device_type == WgpuDeviceType::IntegratedGpu;
+            || format!("{:?}", info.device_type).contains("Integrated");
     }
 
     if config.ssao.disable_on_integrated_gpu && is_integrated {
