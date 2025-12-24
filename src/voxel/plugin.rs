@@ -3,6 +3,7 @@ use crate::constants::{CHUNK_SIZE, CHUNK_SIZE_I32};
 use crate::rendering::capabilities::GraphicsCapabilities;
 use crate::rendering::materials::VoxelMaterial;
 use crate::rendering::triplanar_material::TriplanarMaterialHandle;
+use crate::rendering::AmbientOcclusionConfig;
 use crate::voxel::chunk::{Chunk, LodLevel};
 // use crate::voxel::gravity::GravityPlugin;
 use crate::voxel::meshing::{generate_chunk_mesh_with_mode, MeshMode, MeshSettings};
@@ -609,6 +610,7 @@ fn mesh_dirty_chunks_system(
     mesh_settings: Res<MeshSettings>,
     lod_settings: Res<LodSettings>,
     skirt_config: Res<SkirtConfig>,
+    ao_config: Res<AmbientOcclusionConfig>,
 ) {
     // Bail out until the blocky material is ready to avoid panicking when resources are still loading.
     let blocky_material = match blocky_material {
@@ -671,6 +673,7 @@ fn mesh_dirty_chunks_system(
                 lod_level,
                 neighbor_lods,
                 &skirt_config,
+                &ao_config.baked,
             )
         } else {
             continue;

@@ -260,7 +260,7 @@ pub fn generate_skirts(
 
         positions.push(top0.to_array());
         normals.push(blended_normal0.to_array());
-        uvs.push([0.0, 0.0]);
+        uvs.push([1.0, 0.0]);
         material_weights.push(edge.v0_weights);
 
         positions.push(top1.to_array());
@@ -270,12 +270,12 @@ pub fn generate_skirts(
 
         positions.push(bot0.to_array());
         normals.push(blended_normal0.to_array());
-        uvs.push([0.0, 1.0]);
+        uvs.push([1.0, 0.0]);
         material_weights.push(edge.v0_weights);
 
         positions.push(bot1.to_array());
         normals.push(blended_normal1.to_array());
-        uvs.push([1.0, 1.0]);
+        uvs.push([1.0, 0.0]);
         material_weights.push(edge.v1_weights);
 
         match edge.face {

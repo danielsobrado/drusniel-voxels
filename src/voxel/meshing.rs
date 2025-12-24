@@ -3,7 +3,9 @@ use bevy::prelude::*;
 use bevy_mesh::{Indices, PrimitiveTopology};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::constants::{CHUNK_SIZE, VOXEL_SIZE};
+use crate::rendering::ao_config::BakedAoConfig;
 use crate::voxel::chunk::{Chunk, LodLevel};
+use crate::voxel::baked_ao::compute_surface_nets_ao;
 use crate::voxel::skirt::{extract_boundary_edges, generate_skirts, NeighborLods, SkirtConfig};
 use crate::voxel::types::{VoxelType, Voxel};
 use crate::voxel::world::VoxelWorld;
@@ -36,7 +38,7 @@ pub struct MeshData {
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
     pub uvs: Vec<[f32; 2]>,
-    pub colors: Vec<[f32; 4]>, // Vertex colors for AO
+    pub colors: Vec<[f32; 4]>, // Vertex colors for AO (blocky) or material weights (surface nets)
     pub indices: Vec<u32>,
 }
 
@@ -75,6 +77,7 @@ pub struct ChunkMeshResult {
 pub fn generate_chunk_mesh(
     chunk: &Chunk,
     world: &VoxelWorld,
+    ao_config: &BakedAoConfig,
 ) -> ChunkMeshResult {
     let mut solid_mesh = MeshData::new();
     let mut water_mesh = MeshData::new();
@@ -99,12 +102,12 @@ pub fn generate_chunk_mesh(
                     check_water_face(chunk, world, local, Face::West, &mut water_mesh, voxel);
                 } else if voxel.is_solid() {
                     // Solid blocks - render faces adjacent to air or water (transparent)
-                    check_face(chunk, world, local, Face::Top, &mut solid_mesh, voxel);
-                    check_face(chunk, world, local, Face::Bottom, &mut solid_mesh, voxel);
-                    check_face(chunk, world, local, Face::North, &mut solid_mesh, voxel);
-                    check_face(chunk, world, local, Face::South, &mut solid_mesh, voxel);
-                    check_face(chunk, world, local, Face::East, &mut solid_mesh, voxel);
-                    check_face(chunk, world, local, Face::West, &mut solid_mesh, voxel);
+                    check_face(chunk, world, local, Face::Top, &mut solid_mesh, voxel, ao_config);
+                    check_face(chunk, world, local, Face::Bottom, &mut solid_mesh, voxel, ao_config);
+                    check_face(chunk, world, local, Face::North, &mut solid_mesh, voxel, ao_config);
+                    check_face(chunk, world, local, Face::South, &mut solid_mesh, voxel, ao_config);
+                    check_face(chunk, world, local, Face::East, &mut solid_mesh, voxel, ao_config);
+                    check_face(chunk, world, local, Face::West, &mut solid_mesh, voxel, ao_config);
                 }
             }
         }
@@ -123,9 +126,10 @@ fn check_face(
     face: Face,
     mesh_data: &mut MeshData,
     voxel: VoxelType,
+    ao_config: &BakedAoConfig,
 ) {
     if is_face_visible(chunk, world, local, face) {
-        add_face_with_ao(mesh_data, chunk, world, local, face, voxel);
+        add_face_with_ao(mesh_data, chunk, world, local, face, voxel, ao_config);
     }
 }
 
@@ -226,15 +230,20 @@ fn is_water_face_visible(
     }
 }
 
-/// Calculate vertex ambient occlusion (0-3 scale, 0 = fully occluded, 3 = not occluded)
-fn calculate_vertex_ao(side1: bool, side2: bool, corner: bool) -> f32 {
-    let ao = if side1 && side2 {
-        0 // Fully occluded
+/// Calculate vertex ambient occlusion (0-3 scale, 0 = fully occluded, 3 = not occluded).
+fn calculate_vertex_ao(side1: bool, side2: bool, corner: bool, ao_config: &BakedAoConfig) -> f32 {
+    if !ao_config.enabled {
+        return 1.0;
+    }
+
+    let ao_value = if side1 && side2 {
+        0.0
     } else {
-        3 - (side1 as i32 + side2 as i32 + corner as i32)
+        let count = side1 as u8 + side2 as u8 + corner as u8;
+        1.0 - (count as f32 * ao_config.corner_darkness / 3.0)
     };
-    // Convert to brightness (0.4 to 1.0 range for visible difference)
-    0.4 + (ao as f32 / 3.0) * 0.6
+
+    ao_value * ao_config.strength + (1.0 - ao_config.strength)
 }
 
 /// Check if a world position contains a solid block (for AO calculation)
@@ -262,7 +271,13 @@ fn is_solid_at_offset(chunk: &Chunk, world: &VoxelWorld, local: UVec3, offset: I
 }
 
 /// Get AO values for the 4 vertices of a face
-fn get_face_ao(chunk: &Chunk, world: &VoxelWorld, local: UVec3, face: Face) -> [f32; 4] {
+fn get_face_ao(
+    chunk: &Chunk,
+    world: &VoxelWorld,
+    local: UVec3,
+    face: Face,
+    ao_config: &BakedAoConfig,
+) -> [f32; 4] {
     // For each face, we need to check the 8 neighbors in the plane of the face
     // and calculate AO for each of the 4 vertices
     
@@ -323,7 +338,7 @@ fn get_face_ao(chunk: &Chunk, world: &VoxelWorld, local: UVec3, face: Face) -> [
         let side1 = is_solid_at_offset(chunk, world, local, *side1_off);
         let side2 = is_solid_at_offset(chunk, world, local, *side2_off);
         let corner = is_solid_at_offset(chunk, world, local, *corner_off);
-        ao[i] = calculate_vertex_ao(side1, side2, corner);
+        ao[i] = calculate_vertex_ao(side1, side2, corner, ao_config);
     }
     ao
 }
@@ -363,6 +378,7 @@ fn add_face_with_ao(
     local: UVec3,
     face: Face,
     voxel: VoxelType,
+    ao_config: &BakedAoConfig,
 ) {
     let x = local.x as f32 * VOXEL_SIZE;
     let y = local.y as f32 * VOXEL_SIZE;
@@ -397,7 +413,7 @@ fn add_face_with_ao(
     };
 
     // Calculate AO for each vertex
-    let ao = get_face_ao(chunk, world, local, face);
+    let ao = get_face_ao(chunk, world, local, face, ao_config);
 
     let start_idx = mesh_data.positions.len() as u32;
     
@@ -452,7 +468,7 @@ fn add_face_with_ao(
     
     // Use flipped winding for proper AO interpolation when needed
     // Check if we should flip the quad diagonal based on AO values
-    if ao[0] + ao[2] > ao[1] + ao[3] {
+    if !ao_config.fix_anisotropy || ao[0] + ao[2] > ao[1] + ao[3] {
         // Normal winding
         mesh_data.indices.push(start_idx);
         mesh_data.indices.push(start_idx + 2);
@@ -705,11 +721,26 @@ pub fn generate_chunk_mesh_surface_nets(
     my_lod: LodLevel,
     neighbor_lods: NeighborLods,
     skirt_config: &SkirtConfig,
+    ao_config: &BakedAoConfig,
 ) -> ChunkMeshResult {
     let mut solid_mesh = MeshData::new();
     let mut water_mesh = MeshData::new();
     let mut local_positions: Vec<Vec3> = Vec::new();
     let chunk_origin = VoxelWorld::chunk_to_world(chunk.position());
+    let chunk_origin_vec = chunk_origin.as_vec3();
+
+    let density_sampler = |sample_pos: Vec3| -> f32 {
+        let world_pos = chunk_origin_vec + sample_pos;
+        let voxel_pos = IVec3::new(
+            world_pos.x.floor() as i32,
+            world_pos.y.floor() as i32,
+            world_pos.z.floor() as i32,
+        );
+        match world.get_voxel(voxel_pos) {
+            Some(voxel) if voxel.is_solid() => -1.0,
+            _ => 1.0,
+        }
+    };
 
     // Scale factor to slightly enlarge chunks so they overlap at boundaries
     // This prevents gaps (sky showing through) at chunk seams caused by
@@ -878,6 +909,19 @@ pub fn generate_chunk_mesh_surface_nets(
             let weights1 = compute_vertex_weights(local1);
             let weights2 = compute_vertex_weights(local2);
 
+            let compute_ao = |local: Vec3, normal: [f32; 3]| -> f32 {
+                if !ao_config.enabled {
+                    return 1.0;
+                }
+
+                let normal = Vec3::from_array(normal).normalize_or_zero();
+                compute_surface_nets_ao(local, normal, 0.5, &density_sampler, ao_config)
+            };
+
+            let ao0 = compute_ao(local0, normal0);
+            let ao1 = compute_ao(local1, normal1);
+            let ao2 = compute_ao(local2, normal2);
+
             // Add all 3 vertices for this triangle (not shared)
             let base_idx = solid_mesh.positions.len() as u32;
 
@@ -891,21 +935,21 @@ pub fn generate_chunk_mesh_surface_nets(
             // Vertex 0
             solid_mesh.positions.push(scale_vertex(local0));
             solid_mesh.normals.push(normal0);
-            solid_mesh.uvs.push([0.0, 0.0]); // UVs not used for splatting logic
+            solid_mesh.uvs.push([ao0, 0.0]); // AO stored in uv.x for triplanar shader
             solid_mesh.colors.push(weights0);
             local_positions.push(local0);
 
             // Vertex 1
             solid_mesh.positions.push(scale_vertex(local1));
             solid_mesh.normals.push(normal1);
-            solid_mesh.uvs.push([0.0, 0.0]);
+            solid_mesh.uvs.push([ao1, 0.0]);
             solid_mesh.colors.push(weights1);
             local_positions.push(local1);
 
             // Vertex 2
             solid_mesh.positions.push(scale_vertex(local2));
             solid_mesh.normals.push(normal2);
-            solid_mesh.uvs.push([0.0, 0.0]);
+            solid_mesh.uvs.push([ao2, 0.0]);
             solid_mesh.colors.push(weights2);
             local_positions.push(local2);
 
@@ -1084,11 +1128,19 @@ pub fn generate_chunk_mesh_with_mode(
     my_lod: LodLevel,
     neighbor_lods: NeighborLods,
     skirt_config: &SkirtConfig,
+    ao_config: &BakedAoConfig,
 ) -> ChunkMeshResult {
     match mode {
-        MeshMode::Blocky => generate_chunk_mesh(chunk, world),
+        MeshMode::Blocky => generate_chunk_mesh(chunk, world, ao_config),
         MeshMode::SurfaceNets => {
-            generate_chunk_mesh_surface_nets(chunk, world, my_lod, neighbor_lods, skirt_config)
+            generate_chunk_mesh_surface_nets(
+                chunk,
+                world,
+                my_lod,
+                neighbor_lods,
+                skirt_config,
+                ao_config,
+            )
         }
     }
 }

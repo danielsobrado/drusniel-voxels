@@ -5,6 +5,7 @@ use crate::rendering::capabilities::{
 };
 use crate::rendering::materials::{setup_triplanar_material, setup_water_material};
 use crate::rendering::ray_tracing::RayTracingSettings;
+use crate::rendering::ssao::SsaoPlugin;
 use crate::rendering::triplanar_material::TriplanarMaterial;
 
 pub struct RenderingPlugin;
@@ -17,6 +18,7 @@ impl Plugin for RenderingPlugin {
                 Startup,
                 detect_graphics_capabilities.in_set(GraphicsDetectionSet),
             )
+            .add_plugins(SsaoPlugin)
             // ScreenSpaceReflectionsPlugin is already included by DefaultPlugins via PbrPlugin.
             // Register TriplanarMaterial as a custom material type
             .add_plugins(MaterialPlugin::<TriplanarMaterial>::default())

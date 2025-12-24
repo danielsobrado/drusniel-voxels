@@ -1,0 +1,20 @@
+ambient_occlusion:
+  # Screen-space AO (runtime, GPU-based)
+  ssao:
+    enabled: true
+    # Low, Medium, High, Ultra (Ultra very expensive)
+    quality: High
+    # Thickness of objects for occlusion (increase for voxel terrain)
+    constant_object_thickness: 0.5
+    # Fallback to baked-only on Intel/low-end
+    disable_on_integrated_gpu: true
+
+  # Baked per-vertex AO (computed at mesh generation)
+  baked:
+    enabled: true
+    # Strength multiplier (0.0-1.0)
+    strength: 0.8
+    # How much corner darkness affects final color
+    corner_darkness: 0.6
+    # Flip quad diagonal to fix anisotropy artifacts
+    fix_anisotropy: true

@@ -192,12 +192,17 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     albedo = albedo * uniforms.base_color;
     let blended_n = normalize(final_normal);
 
+    let baked_ao = clamp(in.uv.x, 0.0, 1.0);
+    let ao_strength = 0.7;
+    let ao_factor = 1.0 + (baked_ao - 1.0) * ao_strength;
+
     // Lighting
     let light_dir = normalize(vec3(0.4, 0.8, 0.3));
     let half_dir = normalize(light_dir + view_dir);
     let ndotl = max(dot(blended_n, light_dir), 0.0);
     let ndoth = max(dot(blended_n, half_dir), 0.0);
     
-    let lit = albedo.rgb * (0.35 + ndotl * 0.65) + vec3(pow(ndoth, 32.0) * 0.15);
+    let ambient = 0.35 * ao_factor;
+    let lit = albedo.rgb * (ambient + ndotl * 0.65) + vec3(pow(ndoth, 32.0) * 0.15);
     return vec4(lit, albedo.a);
 }

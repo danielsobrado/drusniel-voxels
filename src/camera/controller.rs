@@ -3,6 +3,8 @@ use crate::map::MapState;
 use crate::menu::PauseMenuState;
 use crate::rendering::capabilities::GraphicsCapabilities;
 use crate::rendering::ray_tracing::RayTracingSettings;
+use crate::atmosphere::fog::{fog_camera_components, FogCamera};
+use crate::atmosphere::config::FogConfig;
 use crate::voxel::types::Voxel;
 use crate::voxel::world::VoxelWorld;
 use bevy::prelude::*;
@@ -12,7 +14,7 @@ use bevy::anti_alias::taa::TemporalAntiAliasing;
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy::input::mouse::MouseMotion;
 use bevy::light::ShadowFilteringMethod;
-use bevy::pbr::{DistanceFog, FogFalloff, ScreenSpaceAmbientOcclusion, ScreenSpaceReflections};
+use bevy::pbr::{DistanceFog, FogFalloff, ScreenSpaceReflections};
 use bevy::post_process::bloom::{Bloom, BloomCompositeMode};
 use bevy::render::view::Hdr;
 
@@ -72,38 +74,32 @@ pub fn spawn_camera(
     mut commands: Commands,
     capabilities: Res<GraphicsCapabilities>,
     ray_tracing: Res<RayTracingSettings>,
+    fog_config: Res<FogConfig>,
 ) {
     let mut camera = commands.spawn((
         Camera3d::default(),
         Camera::default(),
-        Hdr,
         Msaa::Off,
-        Bloom {
-            intensity: 0.15, // Subtle glow on bright highlights
-            composite_mode: BloomCompositeMode::EnergyConserving,
-            ..default()
-        },
         Transform::from_xyz(256.0, 50.0, 256.0).looking_at(Vec3::new(200.0, 30.0, 200.0), Vec3::Y),
         PlayerCamera::default(),
-        // Tonemapping for better HDR look
-        Tonemapping::TonyMcMapface,
-        DebandDither::Enabled,
         ShadowFilteringMethod::Gaussian,
-        // Atmospheric fog with warm/pink horizon tint
-        DistanceFog {
-            color: Color::srgba(0.7, 0.8, 0.95, 1.0), // Soft blue-gray base
-            directional_light_color: Color::srgba(1.0, 0.85, 0.7, 1.0), // Warm golden sun scatter
-            directional_light_exponent: 20.0,
-            falloff: FogFalloff::ExponentialSquared { density: 0.0015 },
-        },
+        fog_camera_components(&fog_config),
     ));
 
-    if !capabilities.integrated_gpu {
-        camera.insert(ScreenSpaceAmbientOcclusion {
-            quality_level: bevy::pbr::ScreenSpaceAmbientOcclusionQualityLevel::High,
-            constant_object_thickness: 0.5,
-            ..default()
-        });
+    if capabilities.integrated_gpu {
+        camera.insert(Tonemapping::None);
+    } else {
+        camera.insert((
+            Hdr,
+            Bloom {
+                intensity: 0.15, // Subtle glow on bright highlights
+                composite_mode: BloomCompositeMode::EnergyConserving,
+                ..default()
+            },
+            // Tonemapping for better HDR look
+            Tonemapping::TonyMcMapface,
+            DebandDither::Enabled,
+        ));
     }
 
     if capabilities.integrated_gpu {

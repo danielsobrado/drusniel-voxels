@@ -32,6 +32,7 @@ struct VertexOutput {
     @location(1) world_normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
     @location(3) material_index: i32,
+    @location(4) ao: f32,
 }
 
 @vertex
@@ -50,6 +51,7 @@ fn vertex(vertex: VertexInput) -> VertexOutput {
     // We assume the mesher puts the index there.
     // Index 0 = Grass, 1 = Dirt, 2 = Rock, 3 = Sand, etc.
     out.material_index = i32(vertex.color.a * 255.0 + 0.5); 
+    out.ao = vertex.color.r;
     
     return out;
 }
@@ -75,7 +77,8 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let N = normalize(in.world_normal);
     let L = normalize(vec3<f32>(0.5, 1.0, 0.5)); // Arbitrary sun dir
     let NdotL = max(dot(N, L), 0.0);
-    let ambient = vec3<f32>(0.3, 0.3, 0.4);
+    let ao = clamp(in.ao, 0.0, 1.0);
+    let ambient = vec3<f32>(0.3, 0.3, 0.4) * ao;
     
     let lighting = ambient + vec3<f32>(1.0, 0.95, 0.8) * NdotL;
     
