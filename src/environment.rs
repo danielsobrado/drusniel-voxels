@@ -29,6 +29,8 @@ pub struct AtmosphereSettings {
     pub night_floor: f32,
     /// Fog density for (day, night)
     pub fog_density: Vec2,
+    /// Whether the day/night cycle is active
+    pub cycle_enabled: bool,
 }
 
 impl Default for AtmosphereSettings {
@@ -45,6 +47,7 @@ impl Default for AtmosphereSettings {
             twilight_band: 0.6,
             night_floor: 0.08,
             fog_density: Vec2::new(0.0009, 0.0022),
+            cycle_enabled: true,
         }
     }
 }
@@ -132,8 +135,10 @@ fn animate_atmosphere(
     mut clear_color: ResMut<ClearColor>,
     mut fog_query: Query<&mut DistanceFog>,
 ) {
-    // Advance time
-    settings.time = (settings.time + time.delta_secs() * settings.time_scale) % settings.day_length;
+    // Advance time if enabled
+    if settings.cycle_enabled {
+        settings.time = (settings.time + time.delta_secs() * settings.time_scale) % settings.day_length;
+    }
     if let Some(sample) = compute_atmosphere(&settings) {
         apply_atmosphere_sample(
             sample,

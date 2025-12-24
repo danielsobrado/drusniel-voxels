@@ -96,6 +96,7 @@ pub struct SettingsState {
     pub twilight_band: TwilightBandOption,
     pub night_brightness: NightBrightnessOption,
     pub fog_preset: FogPresetOption,
+    pub cycle_enabled: bool,
 }
 
 impl Default for SettingsState {
@@ -117,9 +118,13 @@ impl Default for SettingsState {
             twilight_band: TwilightBandOption::Medium,
             night_brightness: NightBrightnessOption::Balanced,
             fog_preset: FogPresetOption::Balanced,
+            cycle_enabled: true,
         }
     }
 }
+
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
+struct DayNightCycleOption(pub bool);
 
 #[derive(Component, Copy, Clone)]
 enum SettingsTabButton {
@@ -384,6 +389,7 @@ impl Plugin for PauseMenuPlugin {
                     update_twilight_backgrounds,
                     update_night_backgrounds,
                     update_fog_backgrounds,
+                    update_cycle_backgrounds,
                     handle_favorite_buttons,
                 ),
             );
@@ -1009,6 +1015,26 @@ fn spawn_settings_dialog(
                         AtmosphereTabContent,
                     ))
                     .with_children(|atmosphere| {
+                        atmosphere.spawn((
+                            Text::new("Day/Night Cycle"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 20.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
+
+                        atmosphere
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Row,
+                                column_gap: Val::Px(8.0),
+                                ..default()
+                            })
+                            .with_children(|row| {
+                                spawn_graphics_option(row, font, "Enabled", DayNightCycleOption(true));
+                                spawn_graphics_option(row, font, "Disabled", DayNightCycleOption(false));
+                            });
                         atmosphere.spawn((
                             Text::new("Day Length"),
                             TextFont {
@@ -1805,11 +1831,22 @@ fn handle_atmosphere_settings(
         (Changed<Interaction>, With<Button>),
     >,
     mut fog_query: Query<(&Interaction, &FogPresetOption), (Changed<Interaction>, With<Button>)>,
+    mut cycle_query: Query<
+        (&Interaction, &DayNightCycleOption),
+        (Changed<Interaction>, With<Button>),
+    >,
     mut atmosphere_settings: ResMut<AtmosphereSettings>,
     mut fog_config: ResMut<crate::atmosphere::FogConfig>,
 ) {
     if !state.open || settings_state.dialog_root.is_none() {
         return;
+    }
+
+    for (interaction, option) in cycle_query.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            settings_state.cycle_enabled = option.0;
+            atmosphere_settings.cycle_enabled = option.0;
+        }
     }
 
     for (interaction, option) in day_length_query.iter_mut() {
@@ -2110,6 +2147,24 @@ fn update_settings_resolution_backgrounds(
 
     for (option, mut background) in query.iter_mut() {
         let active = settings_state.resolution == option.0;
+        *background = if active {
+            Color::srgba(0.32, 0.42, 0.35, 0.95).into()
+        } else {
+            Color::srgba(0.2, 0.2, 0.2, 0.9).into()
+        };
+    }
+}
+
+fn update_cycle_backgrounds(
+    settings_state: Res<SettingsState>,
+    mut query: Query<(&DayNightCycleOption, &mut BackgroundColor)>,
+) {
+    if settings_state.dialog_root.is_none() {
+        return;
+    }
+
+    for (option, mut background) in query.iter_mut() {
+        let active = settings_state.cycle_enabled == option.0;
         *background = if active {
             Color::srgba(0.32, 0.42, 0.35, 0.95).into()
         } else {
