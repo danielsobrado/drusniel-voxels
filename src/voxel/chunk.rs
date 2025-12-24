@@ -17,6 +17,24 @@ pub enum LodLevel {
     Culled,
 }
 
+impl LodLevel {
+    pub fn detail_value(&self) -> u8 {
+        match self {
+            LodLevel::High => 2,
+            LodLevel::Low => 1,
+            LodLevel::Culled => 0,
+        }
+    }
+
+    pub fn is_lower_detail_than(self, other: LodLevel) -> bool {
+        self.detail_value() < other.detail_value()
+    }
+
+    pub fn is_higher_detail_than(self, other: LodLevel) -> bool {
+        self.detail_value() > other.detail_value()
+    }
+}
+
 pub struct Chunk {
     voxels: [VoxelType; CHUNK_VOLUME],
     dirty: bool,
@@ -95,11 +113,13 @@ impl Chunk {
         self.lod_level
     }
 
-    pub fn set_lod_level(&mut self, lod_level: LodLevel) {
+    pub fn set_lod_level(&mut self, lod_level: LodLevel) -> bool {
         if self.lod_level != lod_level {
             self.lod_level = lod_level;
             self.dirty = true;
+            return true;
         }
+        false
     }
 
     // For meshing - index conversion

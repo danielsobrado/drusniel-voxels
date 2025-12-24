@@ -5,7 +5,8 @@ use crate::rendering::materials::VoxelMaterial;
 use crate::rendering::triplanar_material::TriplanarMaterialHandle;
 use crate::voxel::chunk::{Chunk, LodLevel};
 // use crate::voxel::gravity::GravityPlugin;
-use crate::voxel::meshing::{MeshMode, MeshSettings, generate_chunk_mesh_with_mode};
+use crate::voxel::meshing::{generate_chunk_mesh_with_mode, MeshMode, MeshSettings};
+use crate::voxel::skirt::{NeighborLods, SkirtConfig};
 use crate::voxel::persistence::{self, WorldPersistence};
 use crate::voxel::types::VoxelType;
 use crate::voxel::world::VoxelWorld;
@@ -53,6 +54,7 @@ impl Plugin for VoxelPlugin {
             mode: MeshMode::SurfaceNets,
         })
         .insert_resource(LodSettings::default())
+        .insert_resource(SkirtConfig::default())
         // World persistence settings (set force_regenerate to true to regenerate)
         .insert_resource(WorldPersistence {
             force_regenerate: false,
@@ -606,6 +608,7 @@ fn mesh_dirty_chunks_system(
     water_material: Res<crate::rendering::materials::WaterMaterial>,
     mesh_settings: Res<MeshSettings>,
     lod_settings: Res<LodSettings>,
+    skirt_config: Res<SkirtConfig>,
 ) {
     // Bail out until the blocky material is ready to avoid panicking when resources are still loading.
     let blocky_material = match blocky_material {
@@ -644,9 +647,31 @@ fn mesh_dirty_chunks_system(
             continue;
         }
 
+        let neighbor_lods = NeighborLods {
+            neg_x: world
+                .get_chunk(chunk_pos + IVec3::new(-1, 0, 0))
+                .map(|c| c.lod_level()),
+            pos_x: world
+                .get_chunk(chunk_pos + IVec3::new(1, 0, 0))
+                .map(|c| c.lod_level()),
+            neg_z: world
+                .get_chunk(chunk_pos + IVec3::new(0, 0, -1))
+                .map(|c| c.lod_level()),
+            pos_z: world
+                .get_chunk(chunk_pos + IVec3::new(0, 0, 1))
+                .map(|c| c.lod_level()),
+        };
+
         // Step 1: Generate mesh data using immutable borrow
         let mesh_result = if let Some(chunk) = world.get_chunk(chunk_pos) {
-            generate_chunk_mesh_with_mode(chunk, &world, target_mode)
+            generate_chunk_mesh_with_mode(
+                chunk,
+                &world,
+                target_mode,
+                lod_level,
+                neighbor_lods,
+                &skirt_config,
+            )
         } else {
             continue;
         };
@@ -743,6 +768,7 @@ fn mesh_dirty_chunks_system(
 fn adjust_lod_for_integrated_gpu(
     capabilities: Option<Res<GraphicsCapabilities>>,
     mut lod_settings: ResMut<LodSettings>,
+    mut mesh_settings: ResMut<MeshSettings>,
     mut applied: Local<bool>,
 ) {
     if *applied {
@@ -758,9 +784,10 @@ fn adjust_lod_for_integrated_gpu(
     }
 
     if capabilities.integrated_gpu {
-        lod_settings.high_detail_distance = 64.0;
-        lod_settings.cull_distance = 128.0;
+        lod_settings.high_detail_distance = 48.0;
+        lod_settings.cull_distance = 96.0;
         lod_settings.low_detail_mode = MeshMode::Blocky;
+        mesh_settings.mode = MeshMode::Blocky;
         info!("Integrated GPU detected; using more aggressive chunk LOD distances.");
     }
 
@@ -778,6 +805,8 @@ fn update_chunk_lod_system(
 
     let camera_pos = camera_transform.translation;
 
+    let mut lod_changed: Vec<IVec3> = Vec::new();
+
     for (chunk_pos, chunk) in world.chunk_entries_mut() {
         let world_pos = VoxelWorld::chunk_to_world(*chunk_pos);
         let chunk_center = world_pos.as_vec3() + Vec3::splat(CHUNK_SIZE as f32 * 0.5);
@@ -791,6 +820,22 @@ fn update_chunk_lod_system(
             LodLevel::Culled
         };
 
-        chunk.set_lod_level(target_lod);
+        if chunk.set_lod_level(target_lod) {
+            lod_changed.push(*chunk_pos);
+        }
+    }
+
+    for chunk_pos in lod_changed {
+        for offset in [
+            IVec3::new(-1, 0, 0),
+            IVec3::new(1, 0, 0),
+            IVec3::new(0, 0, -1),
+            IVec3::new(0, 0, 1),
+        ] {
+            let neighbor_pos = chunk_pos + offset;
+            if let Some(neighbor) = world.get_chunk_mut(neighbor_pos) {
+                neighbor.mark_dirty();
+            }
+        }
     }
 }

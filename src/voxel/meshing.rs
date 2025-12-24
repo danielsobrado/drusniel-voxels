@@ -2,8 +2,9 @@ use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
 use bevy_mesh::{Indices, PrimitiveTopology};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use crate::constants::VOXEL_SIZE;
-use crate::voxel::chunk::Chunk;
+use crate::constants::{CHUNK_SIZE, VOXEL_SIZE};
+use crate::voxel::chunk::{Chunk, LodLevel};
+use crate::voxel::skirt::{extract_boundary_edges, generate_skirts, NeighborLods, SkirtConfig};
 use crate::voxel::types::{VoxelType, Voxel};
 use crate::voxel::world::VoxelWorld;
 
@@ -701,9 +702,13 @@ fn generate_water_sdf(chunk: &Chunk, world: &VoxelWorld) -> [f32; 5832] {
 pub fn generate_chunk_mesh_surface_nets(
     chunk: &Chunk,
     world: &VoxelWorld,
+    my_lod: LodLevel,
+    neighbor_lods: NeighborLods,
+    skirt_config: &SkirtConfig,
 ) -> ChunkMeshResult {
     let mut solid_mesh = MeshData::new();
     let mut water_mesh = MeshData::new();
+    let mut local_positions: Vec<Vec3> = Vec::new();
     let chunk_origin = VoxelWorld::chunk_to_world(chunk.position());
 
     // Scale factor to slightly enlarge chunks so they overlap at boundaries
@@ -888,24 +893,50 @@ pub fn generate_chunk_mesh_surface_nets(
             solid_mesh.normals.push(normal0);
             solid_mesh.uvs.push([0.0, 0.0]); // UVs not used for splatting logic
             solid_mesh.colors.push(weights0);
+            local_positions.push(local0);
 
             // Vertex 1
             solid_mesh.positions.push(scale_vertex(local1));
             solid_mesh.normals.push(normal1);
             solid_mesh.uvs.push([0.0, 0.0]);
             solid_mesh.colors.push(weights1);
+            local_positions.push(local1);
 
             // Vertex 2
             solid_mesh.positions.push(scale_vertex(local2));
             solid_mesh.normals.push(normal2);
             solid_mesh.uvs.push([0.0, 0.0]);
             solid_mesh.colors.push(weights2);
+            local_positions.push(local2);
 
             // Add triangle indices (sequential since vertices are not shared)
             solid_mesh.indices.push(base_idx);
             solid_mesh.indices.push(base_idx + 1);
             solid_mesh.indices.push(base_idx + 2);
         }
+    }
+
+    if !solid_mesh.indices.is_empty() {
+        let boundary_edges = extract_boundary_edges(
+            &local_positions,
+            &solid_mesh.positions,
+            &solid_mesh.normals,
+            &solid_mesh.indices,
+            &solid_mesh.colors,
+            CHUNK_SIZE as f32,
+        );
+
+        generate_skirts(
+            &mut solid_mesh.positions,
+            &mut solid_mesh.normals,
+            &mut solid_mesh.uvs,
+            &mut solid_mesh.colors,
+            &mut solid_mesh.indices,
+            &boundary_edges,
+            skirt_config,
+            my_lod,
+            &neighbor_lods,
+        );
     }
 
     // Generate Water Mesh using Surface Nets
@@ -1050,10 +1081,15 @@ pub fn generate_chunk_mesh_with_mode(
     chunk: &Chunk,
     world: &VoxelWorld,
     mode: MeshMode,
+    my_lod: LodLevel,
+    neighbor_lods: NeighborLods,
+    skirt_config: &SkirtConfig,
 ) -> ChunkMeshResult {
     match mode {
         MeshMode::Blocky => generate_chunk_mesh(chunk, world),
-        MeshMode::SurfaceNets => generate_chunk_mesh_surface_nets(chunk, world),
+        MeshMode::SurfaceNets => {
+            generate_chunk_mesh_surface_nets(chunk, world, my_lod, neighbor_lods, skirt_config)
+        }
     }
 }
 
