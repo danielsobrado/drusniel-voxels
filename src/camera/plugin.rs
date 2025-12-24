@@ -1,5 +1,5 @@
 use crate::camera::controller::{
-    player_camera_system, spawn_camera, update_camera_shadow_filtering,
+    camera_follow_player, player_camera_system, spawn_camera, update_camera_shadow_filtering,
     update_ray_tracing_on_camera,
 };
 use crate::rendering::capabilities::GraphicsDetectionSet;
@@ -20,6 +20,7 @@ impl Plugin for CameraPlugin {
             Update,
             (
                 player_camera_system,
+                camera_follow_player,
                 update_ray_tracing_on_camera,
                 update_camera_shadow_filtering,
             ),

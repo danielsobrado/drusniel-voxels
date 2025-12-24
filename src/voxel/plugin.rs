@@ -11,6 +11,7 @@ use crate::voxel::skirt::{NeighborLods, SkirtConfig};
 use crate::voxel::persistence::{self, WorldPersistence};
 use crate::voxel::types::VoxelType;
 use crate::voxel::world::VoxelWorld;
+use crate::physics::NeedsCollider;
 use bevy::prelude::*;
 
 pub struct VoxelPlugin;
@@ -697,7 +698,9 @@ fn mesh_dirty_chunks_system(
                 let mesh_handle = meshes.add(mesh);
 
                 if let Some(entity) = chunk.mesh_entity() {
-                    commands.entity(entity).insert(Mesh3d(mesh_handle));
+                    commands
+                        .entity(entity)
+                        .insert((Mesh3d(mesh_handle), NeedsCollider));
                 } else {
                     // Spawn with appropriate material based on mesh mode
                     let entity = match mesh_settings.mode {
@@ -713,6 +716,7 @@ fn mesh_dirty_chunks_system(
                                 crate::voxel::meshing::ChunkMesh {
                                     chunk_position: chunk_pos,
                                 },
+                                NeedsCollider,
                             ))
                             .id(),
                         MeshMode::SurfaceNets => commands
@@ -727,6 +731,7 @@ fn mesh_dirty_chunks_system(
                                 crate::voxel::meshing::ChunkMesh {
                                     chunk_position: chunk_pos,
                                 },
+                                NeedsCollider,
                             ))
                             .id(),
                     };

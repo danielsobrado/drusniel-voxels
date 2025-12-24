@@ -11,6 +11,8 @@ use voxel_builder::interaction::InteractionPlugin;
 use voxel_builder::map::MapPlugin;
 use voxel_builder::menu::PauseMenuPlugin;
 use voxel_builder::props::PropsPlugin;
+use voxel_builder::physics::PhysicsPlugin;
+use voxel_builder::player::PlayerPlugin;
 use voxel_builder::rendering::plugin::RenderingPlugin;
 use voxel_builder::vegetation::VegetationPlugin;
 use voxel_builder::viewmodel::PickaxePlugin;
@@ -41,6 +43,8 @@ fn main() {
     App::new()
         .add_plugins(plugins)
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
+        .add_plugins(PhysicsPlugin)
+        .add_plugins(PlayerPlugin)
         .add_plugins(VoxelPlugin)
         .add_plugins(RenderingPlugin)
         .add_plugins(CameraPlugin)

@@ -1,6 +1,7 @@
 use crate::chat::ChatState;
 use crate::environment::AtmosphereSettings;
 use crate::network::NetworkSession;
+use crate::player::{Player, PlayerConfig};
 use crate::rendering::{capabilities::GraphicsCapabilities, ray_tracing::RayTracingSettings};
 use crate::voxel::{meshing::ChunkMesh, persistence, world::VoxelWorld};
 use bevy::{
@@ -98,6 +99,10 @@ pub struct SettingsState {
     pub fog_preset: FogPresetOption,
     pub cycle_enabled: bool,
     pub shadow_filtering: ShadowFiltering,
+    pub walk_speed: WalkSpeedPreset,
+    pub run_speed: RunSpeedPreset,
+    pub jump_height: JumpHeightPreset,
+    pub float_height: FloatHeightPreset,
 }
 
 impl Default for SettingsState {
@@ -121,6 +126,10 @@ impl Default for SettingsState {
             fog_preset: FogPresetOption::Balanced,
             cycle_enabled: true,
             shadow_filtering: ShadowFiltering::Gaussian,
+            walk_speed: WalkSpeedPreset::Standard,
+            run_speed: RunSpeedPreset::Standard,
+            jump_height: JumpHeightPreset::Standard,
+            float_height: FloatHeightPreset::Standard,
         }
     }
 }
@@ -137,6 +146,18 @@ struct ShadowFilteringOption(pub ShadowFiltering);
 
 #[derive(Component, Copy, Clone, Eq, PartialEq)]
 struct DayNightCycleOption(pub bool);
+
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
+struct PlayerWalkSpeedOption(pub WalkSpeedPreset);
+
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
+struct PlayerRunSpeedOption(pub RunSpeedPreset);
+
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
+struct PlayerJumpHeightOption(pub JumpHeightPreset);
+
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
+struct PlayerFloatHeightOption(pub FloatHeightPreset);
 
 #[derive(Component, Copy, Clone)]
 enum SettingsTabButton {
@@ -270,6 +291,74 @@ pub enum FogPresetOption {
     Misty,
 }
 
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
+pub enum WalkSpeedPreset {
+    Slow,
+    Standard,
+    Fast,
+}
+
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
+pub enum RunSpeedPreset {
+    Slow,
+    Standard,
+    Fast,
+}
+
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
+pub enum JumpHeightPreset {
+    Low,
+    Standard,
+    High,
+}
+
+#[derive(Component, Copy, Clone, Eq, PartialEq)]
+pub enum FloatHeightPreset {
+    Low,
+    Standard,
+    High,
+}
+
+impl WalkSpeedPreset {
+    fn value(self) -> f32 {
+        match self {
+            WalkSpeedPreset::Slow => 4.0,
+            WalkSpeedPreset::Standard => 6.0,
+            WalkSpeedPreset::Fast => 8.0,
+        }
+    }
+}
+
+impl RunSpeedPreset {
+    fn value(self) -> f32 {
+        match self {
+            RunSpeedPreset::Slow => 9.0,
+            RunSpeedPreset::Standard => 12.0,
+            RunSpeedPreset::Fast => 16.0,
+        }
+    }
+}
+
+impl JumpHeightPreset {
+    fn value(self) -> f32 {
+        match self {
+            JumpHeightPreset::Low => 1.5,
+            JumpHeightPreset::Standard => 2.0,
+            JumpHeightPreset::High => 2.6,
+        }
+    }
+}
+
+impl FloatHeightPreset {
+    fn value(self) -> f32 {
+        match self {
+            FloatHeightPreset::Low => 1.2,
+            FloatHeightPreset::Standard => 1.5,
+            FloatHeightPreset::High => 1.8,
+        }
+    }
+}
+
 #[derive(Component)]
 struct PauseMenuRoot;
 
@@ -343,6 +432,7 @@ impl Plugin for PauseMenuPlugin {
                 (
                     handle_settings_tabs,
                     handle_graphics_settings,
+                    handle_gameplay_settings,
                     handle_atmosphere_settings,
                     handle_close_settings,
                 ),
@@ -374,6 +464,8 @@ impl Plugin for PauseMenuPlugin {
                     update_settings_content_visibility,
                     update_settings_graphics_backgrounds,
                     update_settings_aa_backgrounds,
+                    update_settings_walk_speed_backgrounds,
+                    update_settings_run_speed_backgrounds,
                 ),
             )
             .add_systems(
@@ -384,6 +476,8 @@ impl Plugin for PauseMenuPlugin {
                     update_settings_resolution_backgrounds,
                     update_settings_shadow_filtering_backgrounds,
                     update_day_length_backgrounds,
+                    update_settings_jump_height_backgrounds,
+                    update_settings_float_height_backgrounds,
                 ),
             )
             .add_systems(
@@ -1040,14 +1134,170 @@ fn spawn_settings_dialog(
                     ))
                     .with_children(|gameplay| {
                         gameplay.spawn((
-                            Text::new("Gameplay settings coming soon."),
+                            Text::new("Player Movement"),
                             TextFont {
                                 font: font.clone(),
-                                font_size: 18.0,
+                                font_size: 20.0,
                                 ..default()
                             },
                             TextColor(Color::WHITE),
                         ));
+
+                        gameplay.spawn((
+                            Text::new("Walk Speed"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 16.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
+
+                        gameplay
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Row,
+                                column_gap: Val::Px(8.0),
+                                row_gap: Val::Px(8.0),
+                                flex_wrap: FlexWrap::Wrap,
+                                ..default()
+                            })
+                            .with_children(|row| {
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "Slow",
+                                    PlayerWalkSpeedOption(WalkSpeedPreset::Slow),
+                                );
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "Standard",
+                                    PlayerWalkSpeedOption(WalkSpeedPreset::Standard),
+                                );
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "Fast",
+                                    PlayerWalkSpeedOption(WalkSpeedPreset::Fast),
+                                );
+                            });
+
+                        gameplay.spawn((
+                            Text::new("Run Speed"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 16.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
+
+                        gameplay
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Row,
+                                column_gap: Val::Px(8.0),
+                                row_gap: Val::Px(8.0),
+                                flex_wrap: FlexWrap::Wrap,
+                                ..default()
+                            })
+                            .with_children(|row| {
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "Slow",
+                                    PlayerRunSpeedOption(RunSpeedPreset::Slow),
+                                );
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "Standard",
+                                    PlayerRunSpeedOption(RunSpeedPreset::Standard),
+                                );
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "Fast",
+                                    PlayerRunSpeedOption(RunSpeedPreset::Fast),
+                                );
+                            });
+
+                        gameplay.spawn((
+                            Text::new("Jump Height"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 16.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
+
+                        gameplay
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Row,
+                                column_gap: Val::Px(8.0),
+                                row_gap: Val::Px(8.0),
+                                flex_wrap: FlexWrap::Wrap,
+                                ..default()
+                            })
+                            .with_children(|row| {
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "Low",
+                                    PlayerJumpHeightOption(JumpHeightPreset::Low),
+                                );
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "Standard",
+                                    PlayerJumpHeightOption(JumpHeightPreset::Standard),
+                                );
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "High",
+                                    PlayerJumpHeightOption(JumpHeightPreset::High),
+                                );
+                            });
+
+                        gameplay.spawn((
+                            Text::new("Float Height"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: 16.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                        ));
+
+                        gameplay
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Row,
+                                column_gap: Val::Px(8.0),
+                                row_gap: Val::Px(8.0),
+                                flex_wrap: FlexWrap::Wrap,
+                                ..default()
+                            })
+                            .with_children(|row| {
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "Low",
+                                    PlayerFloatHeightOption(FloatHeightPreset::Low),
+                                );
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "Standard",
+                                    PlayerFloatHeightOption(FloatHeightPreset::Standard),
+                                );
+                                spawn_graphics_option(
+                                    row,
+                                    font,
+                                    "High",
+                                    PlayerFloatHeightOption(FloatHeightPreset::High),
+                                );
+                            });
                     });
 
                 content
@@ -1858,6 +2108,64 @@ fn handle_graphics_settings(
     }
 }
 
+fn handle_gameplay_settings(
+    state: Res<PauseMenuState>,
+    mut settings_state: ResMut<SettingsState>,
+    mut player_config: ResMut<PlayerConfig>,
+    mut player_query: Query<&mut PlayerConfig, With<Player>>,
+    mut walk_query: Query<(&Interaction, &PlayerWalkSpeedOption), (Changed<Interaction>, With<Button>)>,
+    mut run_query: Query<(&Interaction, &PlayerRunSpeedOption), (Changed<Interaction>, With<Button>)>,
+    mut jump_query: Query<(&Interaction, &PlayerJumpHeightOption), (Changed<Interaction>, With<Button>)>,
+    mut float_query: Query<(&Interaction, &PlayerFloatHeightOption), (Changed<Interaction>, With<Button>)>,
+) {
+    if !state.open || settings_state.dialog_root.is_none() {
+        return;
+    }
+
+    let mut updated = false;
+
+    for (interaction, option) in walk_query.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            settings_state.walk_speed = option.0;
+            player_config.walk_speed = option.0.value();
+            updated = true;
+        }
+    }
+
+    for (interaction, option) in run_query.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            settings_state.run_speed = option.0;
+            player_config.run_speed = option.0.value();
+            updated = true;
+        }
+    }
+
+    for (interaction, option) in jump_query.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            settings_state.jump_height = option.0;
+            player_config.jump_height = option.0.value();
+            updated = true;
+        }
+    }
+
+    for (interaction, option) in float_query.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            settings_state.float_height = option.0;
+            player_config.float_height = option.0.value();
+            updated = true;
+        }
+    }
+
+    if updated {
+        for mut config in player_query.iter_mut() {
+            config.walk_speed = player_config.walk_speed;
+            config.run_speed = player_config.run_speed;
+            config.jump_height = player_config.jump_height;
+            config.float_height = player_config.float_height;
+        }
+    }
+}
+
 fn handle_atmosphere_settings(
     state: Res<PauseMenuState>,
     mut settings_state: ResMut<SettingsState>,
@@ -2148,6 +2456,78 @@ fn update_settings_aa_backgrounds(
 
     for (option, mut background) in query.iter_mut() {
         let active = settings_state.anti_aliasing == option.0;
+        *background = if active {
+            Color::srgba(0.32, 0.42, 0.35, 0.95).into()
+        } else {
+            Color::srgba(0.2, 0.2, 0.2, 0.9).into()
+        };
+    }
+}
+
+fn update_settings_walk_speed_backgrounds(
+    settings_state: Res<SettingsState>,
+    mut query: Query<(&PlayerWalkSpeedOption, &mut BackgroundColor)>,
+) {
+    if settings_state.dialog_root.is_none() {
+        return;
+    }
+
+    for (option, mut background) in query.iter_mut() {
+        let active = settings_state.walk_speed == option.0;
+        *background = if active {
+            Color::srgba(0.32, 0.42, 0.35, 0.95).into()
+        } else {
+            Color::srgba(0.2, 0.2, 0.2, 0.9).into()
+        };
+    }
+}
+
+fn update_settings_run_speed_backgrounds(
+    settings_state: Res<SettingsState>,
+    mut query: Query<(&PlayerRunSpeedOption, &mut BackgroundColor)>,
+) {
+    if settings_state.dialog_root.is_none() {
+        return;
+    }
+
+    for (option, mut background) in query.iter_mut() {
+        let active = settings_state.run_speed == option.0;
+        *background = if active {
+            Color::srgba(0.32, 0.42, 0.35, 0.95).into()
+        } else {
+            Color::srgba(0.2, 0.2, 0.2, 0.9).into()
+        };
+    }
+}
+
+fn update_settings_jump_height_backgrounds(
+    settings_state: Res<SettingsState>,
+    mut query: Query<(&PlayerJumpHeightOption, &mut BackgroundColor)>,
+) {
+    if settings_state.dialog_root.is_none() {
+        return;
+    }
+
+    for (option, mut background) in query.iter_mut() {
+        let active = settings_state.jump_height == option.0;
+        *background = if active {
+            Color::srgba(0.32, 0.42, 0.35, 0.95).into()
+        } else {
+            Color::srgba(0.2, 0.2, 0.2, 0.9).into()
+        };
+    }
+}
+
+fn update_settings_float_height_backgrounds(
+    settings_state: Res<SettingsState>,
+    mut query: Query<(&PlayerFloatHeightOption, &mut BackgroundColor)>,
+) {
+    if settings_state.dialog_root.is_none() {
+        return;
+    }
+
+    for (option, mut background) in query.iter_mut() {
+        let active = settings_state.float_height == option.0;
         *background = if active {
             Color::srgba(0.32, 0.42, 0.35, 0.95).into()
         } else {

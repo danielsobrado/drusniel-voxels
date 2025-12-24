@@ -298,7 +298,6 @@ pub fn handle_bookmark_buttons(
                         Quat::from_euler(EulerRot::YXZ, bookmark.yaw, bookmark.pitch, 0.0);
                     camera.yaw = bookmark.yaw;
                     camera.pitch = bookmark.pitch;
-                    camera.velocity = Vec3::ZERO;
                     palette.needs_redraw = true;
                 }
             }
