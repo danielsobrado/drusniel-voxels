@@ -8,6 +8,13 @@ pub mod plugin;
 pub mod ray_tracing;
 pub mod ssao;
 pub mod triplanar_material;
+pub mod cinematic_config;
+pub mod cinematic;
+pub mod cutscene;
+pub mod photo_mode;
 
 pub use ao_config::AmbientOcclusionConfig;
 pub use ssao::{ssao_camera_components, SsaoPlugin, SsaoSupported};
+pub use cinematic_config::CinematicConfig;
+pub use cinematic::{CinematicPlugin, CinematicEvent, CinematicCamera};
+pub use photo_mode::PhotoModePlugin;

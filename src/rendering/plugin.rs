@@ -19,6 +19,8 @@ impl Plugin for RenderingPlugin {
                 detect_graphics_capabilities.in_set(GraphicsDetectionSet),
             )
             .add_plugins(SsaoPlugin)
+            .add_plugins(crate::rendering::cinematic::CinematicPlugin)
+            .add_plugins(crate::rendering::photo_mode::PhotoModePlugin)
             // ScreenSpaceReflectionsPlugin is already included by DefaultPlugins via PbrPlugin.
             // Register TriplanarMaterial as a custom material type
             .add_plugins(MaterialPlugin::<TriplanarMaterial>::default())

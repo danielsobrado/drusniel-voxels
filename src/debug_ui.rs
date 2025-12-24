@@ -48,7 +48,7 @@ fn debug_settings_ui(
     mut contexts: EguiContexts,
     state: Res<DebugUiState>,
     mut lod_settings: ResMut<LodSettings>,
-    mut veg_config: Option<ResMut<VegetationConfig>>,
+    veg_config: Option<ResMut<VegetationConfig>>,
 ) {
     if !state.show_settings {
         return;

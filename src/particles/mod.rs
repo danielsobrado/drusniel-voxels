@@ -26,7 +26,7 @@ impl Plugin for ParticlePlugin {
             app.add_plugins(HanabiPlugin);
         }
 
-        app.add_event::<SpawnParticleEvent>()
+        app.add_message::<SpawnParticleEvent>()
            .add_systems(Startup, setup_particles)
            .add_systems(Update, (handle_particle_events, despawn_finished_effects));
     }
@@ -44,9 +44,9 @@ fn setup_particles(mut commands: Commands, mut effects: ResMut<Assets<EffectAsse
 }
 
 fn handle_particle_events(
-    mut commands: Commands,
-    mut events: EventReader<SpawnParticleEvent>, 
-    registry: Res<ParticleRegistry>,
+    mut _commands: Commands,
+    mut events: MessageReader<SpawnParticleEvent>, 
+    _registry: Res<ParticleRegistry>,
 ) {
     for ev in events.read() {
         match ev.particle_type {
@@ -73,10 +73,10 @@ fn handle_particle_events(
 struct AutoDespawnEffect;
 
 fn despawn_finished_effects(
-    mut commands: Commands,
+    mut _commands: Commands,
     query: Query<(Entity, &CompiledParticleEffect), With<AutoDespawnEffect>>,
 ) {
-    for (entity, effect) in query.iter() {
+    for (_entity, _effect) in query.iter() {
         // if effect.is_finished() {
         //     commands.entity(entity).despawn();
         // }

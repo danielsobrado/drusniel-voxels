@@ -171,7 +171,7 @@ struct ResolutionOption(UVec2);
 struct CloseSettingsButton;
 
 #[derive(Component, Copy, Clone, Eq, PartialEq)]
-enum SettingsTab {
+pub enum SettingsTab {
     Graphics,
     Gameplay,
     Atmosphere,
@@ -187,84 +187,84 @@ struct GameplayTabContent;
 struct AtmosphereTabContent;
 
 #[derive(Component, Copy, Clone, Eq, PartialEq)]
-enum GraphicsQuality {
+pub enum GraphicsQuality {
     Low,
     Medium,
     High,
 }
 
 #[derive(Component, Copy, Clone, Eq, PartialEq)]
-enum AntiAliasing {
+pub enum AntiAliasing {
     None,
     Fxaa,
     Msaa4x,
 }
 
 #[derive(Component, Copy, Clone, Eq, PartialEq)]
-enum DisplayMode {
+pub enum DisplayMode {
     Bordered,
     Borderless,
     Fullscreen,
 }
 
 #[derive(Component, Copy, Clone, Eq, PartialEq)]
-enum DayLengthOption {
+pub enum DayLengthOption {
     Short,
     Standard,
     Long,
 }
 
 #[derive(Component, Copy, Clone, Eq, PartialEq)]
-enum TimeScaleOption {
+pub enum TimeScaleOption {
     Slow,
     RealTime,
     Fast,
 }
 
 #[derive(Component, Copy, Clone, Eq, PartialEq)]
-enum RayleighOption {
+pub enum RayleighOption {
     Gentle,
     Balanced,
     Vivid,
 }
 
 #[derive(Component, Copy, Clone, Eq, PartialEq)]
-enum MieOption {
+pub enum MieOption {
     Soft,
     Standard,
     Dense,
 }
 
 #[derive(Component, Copy, Clone, Eq, PartialEq)]
-enum MieDirectionOption {
+pub enum MieDirectionOption {
     Broad,
     Standard,
     Forward,
 }
 
 #[derive(Component, Copy, Clone, Eq, PartialEq)]
-enum ExposureOption {
+pub enum ExposureOption {
     Low,
     Neutral,
     High,
 }
 
 #[derive(Component, Copy, Clone, Eq, PartialEq)]
-enum TwilightBandOption {
+pub enum TwilightBandOption {
     Narrow,
     Medium,
     Wide,
 }
 
 #[derive(Component, Copy, Clone, Eq, PartialEq)]
-enum NightBrightnessOption {
+pub enum NightBrightnessOption {
     Dim,
     Balanced,
     Bright,
 }
 
 #[derive(Component, Copy, Clone, Eq, PartialEq)]
-enum FogPresetOption {
+pub enum FogPresetOption {
     Clear,
     Balanced,
     Misty,
@@ -287,7 +287,7 @@ enum PauseMenuButton {
 }
 
 #[derive(Component, Copy, Clone, Eq, PartialEq)]
-enum MultiplayerField {
+pub enum MultiplayerField {
     HostPassword,
     JoinIp,
     JoinPort,
@@ -1777,7 +1777,7 @@ fn handle_settings_tabs(
 }
 
 fn handle_graphics_settings(
-    mut commands: Commands,
+    mut _commands: Commands,
     state: Res<PauseMenuState>,
     mut settings_state: ResMut<SettingsState>,
     mut ray_tracing_settings: ResMut<RayTracingSettings>,

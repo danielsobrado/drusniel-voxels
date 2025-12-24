@@ -55,6 +55,10 @@
 *   **Delete**: Toggle Delete Mode
     *   **Left Click**: Delete Block (while in Delete Mode)
 
+### Photo Mode (Toggle with F12)
+*   **Mouse Wheel**: Adjust Focus Distance
+*   **Q / E**: Adjust Aperture (f-stops)
+
 ### Chat
 *   **Ctrl + A**: Open Chat
 *   **Enter**: Send Message

@@ -1,0 +1,222 @@
+    Checking voxel_builder v0.1.0 (C:\Development\drusniel-voxels)
+error[E0425]: cannot find value `state` in this scope
+   --> src\rendering\cinematic.rs:157:9
+    |
+152 |     mut _state: ResMut<CinematicState>,
+    |         ------ `_state` defined here
+...
+157 |     if !state.active || !config.auto_focus.enabled {
+    |         ^^^^^
+    |
+help: the leading underscore in `_state` marks it as unused, consider renaming it to `state`
+    |
+152 -     mut _state: ResMut<CinematicState>,
+152 +     mut state: ResMut<CinematicState>,
+    |
+
+warning: unused import: `FogCamera`
+ --> src\camera\controller.rs:6:48
+  |
+6 | use crate::atmosphere::{fog_camera_components, FogCamera};
+  |                                                ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `DistanceFog` and `FogFalloff`
+  --> src\camera\controller.rs:17:17
+   |
+17 | use bevy::pbr::{DistanceFog, FogFalloff, ScreenSpaceReflections};
+   |                 ^^^^^^^^^^^  ^^^^^^^^^^
+
+warning: unused import: `crate::atmosphere::FogCamera`
+ --> src\camera\plugin.rs:6:5
+  |
+6 | use crate::atmosphere::FogCamera;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated type alias `bevy::prelude::EventWriter`: Renamed to `MessageWriter`.
+   --> src\interaction\mod.rs:235:26
+    |
+235 |     mut particle_events: EventWriter<SpawnParticleEvent>,
+    |                          ^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated type alias `bevy::prelude::EventReader`: Renamed to `MessageReader`.
+  --> src\particles\mod.rs:48:17
+   |
+48 |     mut events: EventReader<SpawnParticleEvent>, 
+   |                 ^^^^^^^^^^^
+
+warning: use of deprecated method `bevy::prelude::App::add_event`: Use `add_message` instead.
+  --> src\particles\mod.rs:29:13
+   |
+29 |         app.add_event::<SpawnParticleEvent>()
+   |             ^^^^^^^^^
+
+warning: variable does not need to be mutable
+    --> src\menu.rs:1780:5
+     |
+1780 |     mut commands: Commands,
+     |     ----^^^^^^^^
+     |     |
+     |     help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `commands`
+    --> src\menu.rs:1780:5
+     |
+1780 |     mut commands: Commands,
+     |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_commands`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable `rejected_area` is assigned to, but never used
+   --> src\vegetation\mod.rs:269:9
+    |
+269 |     let mut rejected_area = 0;
+    |         ^^^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_rejected_area` instead
+
+warning: variable `rejected_normal` is assigned to, but never used
+   --> src\vegetation\mod.rs:270:9
+    |
+270 |     let mut rejected_normal = 0;
+    |         ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_rejected_normal` instead
+
+warning: variable `accepted` is assigned to, but never used
+   --> src\vegetation\mod.rs:271:9
+    |
+271 |     let mut accepted = 0;
+    |         ^^^^^^^^^^^^
+    |
+    = note: consider using `_accepted` instead
+
+warning: unused variable: `seed_base`
+   --> src\vegetation\mod.rs:325:13
+    |
+325 |         let seed_base = seed_base_bits as i32;
+    |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_seed_base`
+
+warning: value assigned to `rejected_area` is never read
+   --> src\vegetation\mod.rs:296:13
+    |
+296 |             rejected_area += 1;
+    |             ^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `rejected_normal` is never read
+   --> src\vegetation\mod.rs:303:13
+    |
+303 |             rejected_normal += 1;
+    |             ^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `accepted` is never read
+   --> src\vegetation\mod.rs:307:9
+    |
+307 |         accepted += 1;
+    |         ^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: unused variable: `centroid`
+   --> src\voxel\meshing.rs:801:17
+    |
+801 |             let centroid = (local0 + local1 + local2) / 3.0;
+    |                 ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_centroid`
+
+warning: unused variable: `avg_normal`
+   --> src\voxel\meshing.rs:829:17
+    |
+829 |             let avg_normal = if avg_len > 0.001 {
+    |                 ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_avg_normal`
+
+warning: variable `water_count` is assigned to, but never used
+   --> src\voxel\plugin.rs:409:13
+    |
+409 |         let mut water_count = 0u32;
+    |             ^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_water_count` instead
+
+warning: value assigned to `water_count` is never read
+   --> src\voxel\plugin.rs:557:45
+    |
+557 |                         VoxelType::Water => water_count += 1,
+    |                                             ^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `water_count` is never read
+   --> src\voxel\plugin.rs:446:29
+    |
+446 | ...                   water_count += 1;
+    |                       ^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: variable does not need to be mutable
+  --> src\debug_ui.rs:51:5
+   |
+51 |     mut veg_config: Option<ResMut<VegetationConfig>>,
+   |     ----^^^^^^^^^^
+   |     |
+   |     help: remove this `mut`
+
+warning: variable does not need to be mutable
+  --> src\particles\mod.rs:47:5
+   |
+47 |     mut commands: Commands,
+   |     ----^^^^^^^^
+   |     |
+   |     help: remove this `mut`
+
+warning: unused variable: `commands`
+  --> src\particles\mod.rs:47:5
+   |
+47 |     mut commands: Commands,
+   |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_commands`
+
+warning: unused variable: `registry`
+  --> src\particles\mod.rs:49:5
+   |
+49 |     registry: Res<ParticleRegistry>,
+   |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_registry`
+
+warning: variable does not need to be mutable
+  --> src\particles\mod.rs:76:5
+   |
+76 |     mut commands: Commands,
+   |     ----^^^^^^^^
+   |     |
+   |     help: remove this `mut`
+
+warning: unused variable: `commands`
+  --> src\particles\mod.rs:76:5
+   |
+76 |     mut commands: Commands,
+   |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_commands`
+
+warning: unused variable: `entity`
+  --> src\particles\mod.rs:79:10
+   |
+79 |     for (entity, effect) in query.iter() {
+   |          ^^^^^^ help: if this is intentional, prefix it with an underscore: `_entity`
+
+warning: unused variable: `effect`
+  --> src\particles\mod.rs:79:18
+   |
+79 |     for (entity, effect) in query.iter() {
+   |                  ^^^^^^ help: if this is intentional, prefix it with an underscore: `_effect`
+
+For more information about this error, try `rustc --explain E0425`.
+warning: `voxel_builder` (lib) generated 28 warnings
+error: could not compile `voxel_builder` (lib) due to 1 previous error; 28 warnings emitted

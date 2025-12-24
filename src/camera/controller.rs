@@ -3,7 +3,7 @@ use crate::map::MapState;
 use crate::menu::PauseMenuState;
 use crate::rendering::capabilities::GraphicsCapabilities;
 use crate::rendering::ray_tracing::RayTracingSettings;
-use crate::atmosphere::{fog_camera_components, FogCamera};
+use crate::atmosphere::fog_camera_components;
 use crate::atmosphere::FogConfig;
 use crate::voxel::types::Voxel;
 use crate::voxel::world::VoxelWorld;
@@ -14,7 +14,7 @@ use bevy::anti_alias::taa::TemporalAntiAliasing;
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy::input::mouse::MouseMotion;
 use bevy::light::ShadowFilteringMethod;
-use bevy::pbr::{DistanceFog, FogFalloff, ScreenSpaceReflections};
+use bevy::pbr::ScreenSpaceReflections;
 use bevy::post_process::bloom::{Bloom, BloomCompositeMode};
 use bevy::render::view::Hdr;
 
@@ -88,6 +88,7 @@ pub fn spawn_camera(
             crate::menu::ShadowFiltering::Temporal => ShadowFilteringMethod::Temporal,
         },
         fog_camera_components(&fog_config),
+        crate::rendering::cinematic::CinematicCamera,
     ));
 
     if capabilities.integrated_gpu {

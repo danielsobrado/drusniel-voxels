@@ -798,7 +798,7 @@ pub fn generate_chunk_mesh_surface_nets(
             let local2 = Vec3::new(safe_pos2[0] - 1.0, safe_pos2[1] - 1.0, safe_pos2[2] - 1.0);
 
             // Calculate triangle centroid for material sampling
-            let centroid = (local0 + local1 + local2) / 3.0;
+            let _centroid = (local0 + local1 + local2) / 3.0;
 
             // Get normals for this triangle
             let get_normal = |i: usize| -> [f32; 3] {
@@ -820,14 +820,14 @@ pub fn generate_chunk_mesh_surface_nets(
             let normal2 = get_normal(i2);
 
             // Average normal for the triangle (used for material selection)
-            let avg_normal = [
+            let _avg_normal = [
                 (normal0[0] + normal1[0] + normal2[0]) / 3.0,
                 (normal0[1] + normal1[1] + normal2[1]) / 3.0,
                 (normal0[2] + normal1[2] + normal2[2]) / 3.0,
             ];
-            let avg_len = (avg_normal[0]*avg_normal[0] + avg_normal[1]*avg_normal[1] + avg_normal[2]*avg_normal[2]).sqrt();
-            let avg_normal = if avg_len > 0.001 {
-                [avg_normal[0]/avg_len, avg_normal[1]/avg_len, avg_normal[2]/avg_len]
+            let avg_len = (_avg_normal[0]*_avg_normal[0] + _avg_normal[1]*_avg_normal[1] + _avg_normal[2]*_avg_normal[2]).sqrt();
+            let _avg_normal = if avg_len > 0.001 {
+                [_avg_normal[0]/avg_len, _avg_normal[1]/avg_len, _avg_normal[2]/avg_len]
             } else {
                 [0.0, 1.0, 0.0]
             };

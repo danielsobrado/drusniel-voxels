@@ -3,7 +3,6 @@ use crate::camera::controller::{
     update_ray_tracing_on_camera,
 };
 use crate::rendering::capabilities::GraphicsDetectionSet;
-use crate::atmosphere::FogCamera;
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions};
 

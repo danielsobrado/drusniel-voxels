@@ -1,0 +1,18 @@
+cinematic:
+  depth_of_field:
+    enabled: true
+    mode: Bokeh
+    focal_distance: 10.0
+    aperture_f_stops: 2.8
+    max_blur_radius: 16.0
+    max_coc_diameter: 64.0
+    
+  motion_blur:
+    enabled: true
+    shutter_angle: 0.5
+    samples: 3
+    
+  auto_focus:
+    enabled: false
+    raycast_distance: 100.0
+    lerp_speed: 3.0

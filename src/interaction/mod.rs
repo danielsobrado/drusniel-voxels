@@ -232,7 +232,7 @@ pub fn break_block_system(
     targeted_entity: Res<TargetedEntity>,
     mut world: ResMut<VoxelWorld>,
     mut held: ResMut<HeldBlock>,
-    mut particle_events: EventWriter<SpawnParticleEvent>,
+    mut particle_events: MessageWriter<SpawnParticleEvent>,
 ) {
     if edit_mode.enabled {
         return;
