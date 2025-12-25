@@ -1,0 +1,41 @@
+# Prop Materials Configuration - Medium Detail for RTX 40xx
+# Scattered environment props warrant mid-tier treatment
+#
+# Texture samples per fragment: 9-12 (triplanar × maps)
+# Target: ~2,000 props, 1ms frame budget
+
+rocks:
+  maps:
+    - albedo
+    - normal
+    - roughness
+    - ao
+  parallax: 0.0  # Skip - props are smaller, less noticeable
+  resolution: 512
+  description: "Large decorative rocks and boulders"
+
+furniture:
+  maps:
+    - albedo
+    - normal
+    - roughness
+  ao: vertex_baked  # Baked in Blender, free at runtime
+  resolution: 512
+  description: "Crafting tables, chairs, storage"
+
+barrels_crates:
+  maps:
+    - albedo
+    - normal
+  roughness: 0.8  # Uniform wood roughness - no map needed
+  ao: vertex_baked
+  resolution: 512
+  description: "Storage containers and decorative props"
+
+# Performance notes:
+# - Props are mid-priority between buildings and terrain
+# - Rocks benefit from roughness/AO detail (natural variation)
+# - Furniture uses vertex-baked AO (efficient)
+# - Barrels/crates are simple enough for uniform roughness
+# - No parallax for props - they're viewed at distance
+# - 512px resolution sufficient for prop scale

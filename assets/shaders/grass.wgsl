@@ -1,6 +1,15 @@
-// Grass wind shader - Valheim-style swaying animation
-// Uses Bevy 0.17 Material system with mesh_functions import
-// Pattern based on assets/shaders/custom_vertex_attribute.wgsl from Bevy examples
+// Grass/Vegetation wind shader - Minimal PBR for RTX 40xx
+// Per-category optimization: vegetation uses vertex colors only (no texture maps)
+// Wind animation is the primary visual feature
+//
+// Texture samples per fragment: 0 (purely vertex-based)
+// Target: ~10,000 grass blades, 0.5ms frame budget
+//
+// Visual Priority:
+// 1. Wind animation (life) - makes grass feel alive
+// 2. Gradient coloring (base to tip) - depth perception
+// 3. LOD system (performance) - many instances on screen
+// 4. Texture detail (skipped) - stylized aesthetic doesn't need it
 
 #import bevy_pbr::mesh_functions::{get_world_from_local, mesh_position_local_to_clip}
 

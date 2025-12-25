@@ -1,5 +1,8 @@
-// Triplanar PBR terrain shader with multi-material support and blending
-// Uses procedural parallax offset derived from normal map strength
+// Triplanar terrain shader - Keep Lean for RTX 40xx
+// Per-category optimization: terrain uses albedo + normal only
+// Roughness is uniform per material (saves 3 texture samples per fragment)
+// SSAO handles ambient occlusion screen-space
+// Target: ~64 chunks, 1.5ms frame budget, 6 samples/fragment
 
 #import bevy_pbr::forward_io::VertexOutput
 
@@ -8,8 +11,14 @@ struct TriplanarUniforms {
     tex_scale: f32,
     blend_sharpness: f32,
     normal_intensity: f32,
-    parallax_scale: f32,
+    parallax_scale: f32, // Only used for rock material
 };
+
+// Uniform roughness values per terrain material (no texture maps needed)
+const GRASS_ROUGHNESS: f32 = 0.85;
+const ROCK_ROUGHNESS: f32 = 0.90;
+const SAND_ROUGHNESS: f32 = 0.98;
+const DIRT_ROUGHNESS: f32 = 0.92;
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(0) var<uniform> uniforms: TriplanarUniforms;
 
@@ -192,17 +201,28 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     albedo = albedo * uniforms.base_color;
     let blended_n = normalize(final_normal);
 
+    // Baked vertex AO - SSAO handles the rest screen-space
     let baked_ao = clamp(in.uv.x, 0.0, 1.0);
-    let ao_strength = 0.7;
+    let ao_strength = 0.6;
     let ao_factor = 1.0 + (baked_ao - 1.0) * ao_strength;
 
-    // Lighting
+    // Calculate uniform roughness based on material blend
+    let roughness = w.x * GRASS_ROUGHNESS +
+                    w.y * ROCK_ROUGHNESS +
+                    w.z * SAND_ROUGHNESS +
+                    w.w * DIRT_ROUGHNESS;
+
+    // Lighting with uniform roughness
     let light_dir = normalize(vec3(0.4, 0.8, 0.3));
     let half_dir = normalize(light_dir + view_dir);
     let ndotl = max(dot(blended_n, light_dir), 0.0);
     let ndoth = max(dot(blended_n, half_dir), 0.0);
-    
+
+    // Roughness affects specular power: higher roughness = broader highlight
+    let spec_power = mix(128.0, 8.0, roughness);
+    let spec_intensity = mix(0.3, 0.05, roughness);
+
     let ambient = 0.35 * ao_factor;
-    let lit = albedo.rgb * (ambient + ndotl * 0.65) + vec3(pow(ndoth, 32.0) * 0.15);
+    let lit = albedo.rgb * (ambient + ndotl * 0.65) + vec3(pow(ndoth, spec_power) * spec_intensity);
     return vec4(lit, albedo.a);
 }

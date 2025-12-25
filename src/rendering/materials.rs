@@ -1,9 +1,10 @@
 use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::prelude::*;
-use crate::rendering::capabilities::GraphicsCapabilities;
-use crate::rendering::triplanar_material::{TriplanarMaterial, TriplanarMaterialHandle, TriplanarUniforms};
-
 use crate::rendering::blocky_material::BlockyMaterial;
+use crate::rendering::building_material::{BuildingMaterial, BuildingMaterialHandle, BuildingUniforms};
+use crate::rendering::capabilities::GraphicsCapabilities;
+use crate::rendering::props_material::{PropsMaterial, PropsMaterialHandle, PropsUniforms};
+use crate::rendering::triplanar_material::{TriplanarMaterial, TriplanarMaterialHandle, TriplanarUniforms};
 
 #[derive(Resource)]
 pub struct VoxelMaterial {
@@ -155,4 +156,127 @@ pub fn configure_triplanar_textures(
             }
         }
     }
+}
+
+/// Setup building material with full PBR textures for RTX 40xx
+/// Buildings get the highest detail: albedo + normal + roughness + AO + metallic + parallax
+pub fn setup_building_material(
+    mut commands: Commands,
+    mut materials: ResMut<Assets<BuildingMaterial>>,
+    capabilities: Option<Res<GraphicsCapabilities>>,
+    asset_server: Res<AssetServer>,
+) {
+    let integrated = capabilities
+        .as_ref()
+        .map(|c| c.integrated_gpu)
+        .unwrap_or(false);
+
+    let material_handle = materials.add(if integrated {
+        // Fallback for integrated GPU - no textures
+        BuildingMaterial {
+            uniforms: BuildingUniforms {
+                base_color: LinearRgba::WHITE,
+                tex_scale: 1.0,
+                blend_sharpness: 8.0,
+                normal_intensity: 0.0,
+                parallax_scale: 0.0,
+                parallax_steps: 0,
+                _padding: [0.0; 3],
+            },
+            ..default()
+        }
+    } else {
+        // Full PBR for dedicated GPU (RTX 40xx target)
+        BuildingMaterial {
+            uniforms: BuildingUniforms {
+                base_color: LinearRgba::WHITE,
+                tex_scale: 1.0,          // 1 tile per world unit for building detail
+                blend_sharpness: 8.0,    // Sharp transitions for buildings
+                normal_intensity: 1.0,
+                parallax_scale: 0.04,    // Subtle parallax depth
+                parallax_steps: 6,       // Balanced quality/performance
+                _padding: [0.0; 3],
+            },
+            // Wood plank textures
+            wood_albedo: Some(asset_server.load("pbr/building/wood/albedo.png")),
+            wood_normal: Some(asset_server.load("pbr/building/wood/normal.png")),
+            wood_roughness: Some(asset_server.load("pbr/building/wood/roughness.png")),
+            wood_ao: Some(asset_server.load("pbr/building/wood/ao.png")),
+            // Stone brick textures
+            stone_albedo: Some(asset_server.load("pbr/building/stone/albedo.png")),
+            stone_normal: Some(asset_server.load("pbr/building/stone/normal.png")),
+            stone_roughness: Some(asset_server.load("pbr/building/stone/roughness.png")),
+            stone_ao: Some(asset_server.load("pbr/building/stone/ao.png")),
+            // Metal plate textures (includes metallic)
+            metal_albedo: Some(asset_server.load("pbr/building/metal/albedo.png")),
+            metal_normal: Some(asset_server.load("pbr/building/metal/normal.png")),
+            metal_roughness: Some(asset_server.load("pbr/building/metal/roughness.png")),
+            metal_ao: Some(asset_server.load("pbr/building/metal/ao.png")),
+            metal_metallic: Some(asset_server.load("pbr/building/metal/metallic.png")),
+            // Thatch textures
+            thatch_albedo: Some(asset_server.load("pbr/building/thatch/albedo.png")),
+            thatch_normal: Some(asset_server.load("pbr/building/thatch/normal.png")),
+            thatch_roughness: Some(asset_server.load("pbr/building/thatch/roughness.png")),
+            thatch_ao: Some(asset_server.load("pbr/building/thatch/ao.png")),
+        }
+    });
+
+    commands.insert_resource(BuildingMaterialHandle {
+        handle: material_handle,
+    });
+}
+
+/// Setup props material with medium PBR for RTX 40xx
+/// Props get medium detail: albedo + normal + roughness + vertex AO
+pub fn setup_props_material(
+    mut commands: Commands,
+    mut materials: ResMut<Assets<PropsMaterial>>,
+    capabilities: Option<Res<GraphicsCapabilities>>,
+    asset_server: Res<AssetServer>,
+) {
+    let integrated = capabilities
+        .as_ref()
+        .map(|c| c.integrated_gpu)
+        .unwrap_or(false);
+
+    let material_handle = materials.add(if integrated {
+        // Fallback for integrated GPU - no textures
+        PropsMaterial {
+            uniforms: PropsUniforms {
+                base_color: LinearRgba::WHITE,
+                tex_scale: 1.0,
+                blend_sharpness: 4.0,
+                normal_intensity: 0.0,
+                default_roughness: 0.8,
+            },
+            ..default()
+        }
+    } else {
+        // Medium PBR for dedicated GPU
+        PropsMaterial {
+            uniforms: PropsUniforms {
+                base_color: LinearRgba::WHITE,
+                tex_scale: 1.0,
+                blend_sharpness: 4.0,
+                normal_intensity: 1.0,
+                default_roughness: 0.8,
+            },
+            // Rock textures (full props PBR)
+            rock_albedo: Some(asset_server.load("pbr/props/rock/albedo.png")),
+            rock_normal: Some(asset_server.load("pbr/props/rock/normal.png")),
+            rock_roughness: Some(asset_server.load("pbr/props/rock/roughness.png")),
+            rock_ao: Some(asset_server.load("pbr/props/rock/ao.png")),
+            // Furniture textures (vertex AO baked)
+            furniture_albedo: Some(asset_server.load("pbr/props/furniture/albedo.png")),
+            furniture_normal: Some(asset_server.load("pbr/props/furniture/normal.png")),
+            furniture_roughness: Some(asset_server.load("pbr/props/furniture/roughness.png")),
+            // Barrel/crate textures (minimal - uniform roughness)
+            crate_albedo: Some(asset_server.load("pbr/props/crate/albedo.png")),
+            crate_normal: Some(asset_server.load("pbr/props/crate/normal.png")),
+        }
+    });
+
+    commands.insert_resource(PropsMaterialHandle {
+        handle: material_handle,
+    });
 }

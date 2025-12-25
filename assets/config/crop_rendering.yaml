@@ -1,0 +1,33 @@
+# Crop Rendering Configuration - Minimal for RTX 40xx
+# Low-poly stylized crops don't benefit from complex PBR
+#
+# Texture samples per fragment: 1 (albedo only)
+# Target: ~10,000 crop instances, 0.5ms frame budget
+
+crops:
+  texture_maps:
+    - albedo  # GLTF vertex colors handle the rest
+  roughness: 0.75  # Uniform - slight sheen on leaves
+  metallic: 0.0    # Organic materials, no metal
+
+  # Vertex AO baked in Blender - free at runtime
+  use_vertex_ao: true
+
+  # Wind animation more important than texture detail
+  wind:
+    enabled: true
+    strength: 0.15
+    frequency: 1.2
+
+# Crop visual priority (in order of importance):
+# 1. Wind animation (life) - makes crops feel alive
+# 2. Growth stage model swaps (progression) - visual feedback
+# 3. LOD system (performance) - many crops on screen
+# 4. Texture detail (least important) - stylized aesthetic
+
+# Why minimal textures for crops?
+# - Valheim aesthetic uses simple, vibrant colors
+# - Wind animation provides most visual interest
+# - High instance count (10,000+) requires efficiency
+# - GLTF vertex colors sufficient for color variation
+# - Players focus on gameplay, not crop texture detail

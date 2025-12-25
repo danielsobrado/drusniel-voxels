@@ -1,0 +1,46 @@
+# Building Materials Configuration - Full PBR for RTX 40xx
+# Buildings deserve the most detail - players examine them closely when building
+#
+# Texture samples per fragment: 15-18 (albedo + normal + roughness + AO, optional parallax)
+# Target: ~500 building pieces, 2ms frame budget
+
+texture_format:
+  resolution: 1024  # 2K overkill for stylized aesthetic
+  maps:
+    - albedo
+    - normal
+    - roughness
+    - ao
+    # Metallic only for metal materials
+
+materials:
+  wood_plank:
+    roughness_map: true
+    ao_map: true
+    parallax: 0.03  # Subtle depth for wood grain
+    description: "Weathered wooden planks for walls and floors"
+
+  stone_brick:
+    roughness_map: true
+    ao_map: true
+    parallax: 0.05  # More pronounced for stone crevices
+    description: "Rough-hewn stone blocks for foundations and walls"
+
+  metal_plate:
+    roughness_map: true
+    metallic_map: true  # Only material that needs metallic
+    ao_map: true
+    parallax: 0.02  # Minimal for smooth metal
+    description: "Forged metal plates for reinforcement and decoration"
+
+  thatch:
+    roughness_map: true
+    ao_map: true
+    parallax: 0.04  # Moderate for straw texture
+    description: "Bundled straw for roofing"
+
+# Performance notes:
+# - Full PBR justified because players stare at buildings up close
+# - RTX 40xx handles 15-18 texture samples per fragment trivially
+# - Parallax adds depth perception at minimal cost
+# - Metal is the only material needing metallic map (most buildings are wood/stone)
