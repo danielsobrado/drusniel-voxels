@@ -1,0 +1,11 @@
+world:
+  size_chunks: [32, 4, 32]      # 512x64x512 voxels
+  chunk_size: 16                 # 16x16x16 per chunk
+  
+meshing:
+  enabled: true
+  greedy: true                   # Use greedy meshing
+  
+debug:
+  wireframe: false
+  chunk_borders: false

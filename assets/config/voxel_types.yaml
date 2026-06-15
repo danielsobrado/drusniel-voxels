@@ -1,0 +1,39 @@
+voxel_types:
+  - id: air
+    solid: false
+    
+  - id: topsoil
+    solid: true
+    hardness: 1.0
+    tool_required: shovel
+    atlas_index: 0
+    
+  - id: subsoil
+    solid: true
+    hardness: 1.5
+    tool_required: shovel
+    atlas_index: 1
+    
+  - id: rock
+    solid: true
+    hardness: 4.0
+    tool_required: pickaxe
+    atlas_index: 2
+    
+  - id: bedrock
+    solid: true
+    hardness: -1.0              # Unbreakable
+    tool_required: none
+    atlas_index: 3
+    
+  - id: sand
+    solid: true
+    hardness: 0.8
+    tool_required: shovel
+    atlas_index: 4
+    
+  - id: clay
+    solid: true
+    hardness: 2.0
+    tool_required: shovel
+    atlas_index: 5

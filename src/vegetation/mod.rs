@@ -1,0 +1,483 @@
+pub mod grass_material;
+
+use bevy::asset::RenderAssetUsages;
+use bevy::prelude::*;
+use bevy_mesh::{Indices, PrimitiveTopology};
+use crate::voxel::world::VoxelWorld;
+use crate::voxel::types::{VoxelType, Voxel};
+use crate::camera::controller::PlayerCamera;
+
+pub use grass_material::{GrassMaterial, GrassMaterialPlugin, GrassMaterialHandles};
+
+/// Component for grass blade instances
+#[derive(Component)]
+pub struct GrassBlade;
+
+/// Component for rock props
+#[derive(Component)]
+pub struct RockProp;
+
+/// Resource to track if grass has been spawned
+#[derive(Resource, Default)]
+pub struct GrassSpawned(pub bool);
+
+/// Resource to track if rocks have been spawned
+#[derive(Resource, Default)]
+pub struct RocksSpawned(pub bool);
+
+/// Resource to track if particles have been spawned
+#[derive(Resource, Default)]
+pub struct ParticlesSpawned(pub bool);
+
+/// Component for floating particles (pollen, dust, etc)
+#[derive(Component)]
+pub struct FloatingParticle {
+    pub base_y: f32,
+    pub phase: f32,
+    pub speed: f32,
+    pub drift: Vec3,
+}
+
+/// Spawn grass blades on grass block surfaces with wind shader
+pub fn spawn_grass_blades(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut grass_materials: ResMut<Assets<GrassMaterial>>,
+    mut material_handles: ResMut<GrassMaterialHandles>,
+    world: Res<VoxelWorld>,
+    mut spawned: ResMut<GrassSpawned>,
+) {
+    if spawned.0 {
+        return;
+    }
+
+    // Wait until world has at least one chunk loaded
+    if world.get_chunk(IVec3::ZERO).is_none() {
+        return;
+    }
+
+    spawned.0 = true;
+
+    // TEMPORARY: Skip grass spawning to debug blue shapes
+    info!("Grass spawning disabled for debugging");
+    return;
+
+    // Create grass blade mesh (thin vertical quad)
+    let grass_mesh = meshes.add(create_grass_blade_mesh());
+
+    // Create grass materials with different color variations
+    let grass_material_configs = vec![
+        // Golden/yellow grass (dominant in Valheim meadows)
+        GrassMaterial::new(
+            LinearRgba::new(0.25, 0.20, 0.08, 1.0),
+            LinearRgba::new(0.95, 0.85, 0.45, 1.0),
+            0.35, 1.8, 0.08,
+        ),
+        // Warm tan grass
+        GrassMaterial::new(
+            LinearRgba::new(0.30, 0.22, 0.10, 1.0),
+            LinearRgba::new(0.85, 0.75, 0.50, 1.0),
+            0.30, 1.5, 0.10,
+        ),
+        // Light green-gold mix
+        GrassMaterial::new(
+            LinearRgba::new(0.15, 0.20, 0.08, 1.0),
+            LinearRgba::new(0.70, 0.80, 0.40, 1.0),
+            0.40, 2.0, 0.07,
+        ),
+        // Pale straw color
+        GrassMaterial::new(
+            LinearRgba::new(0.35, 0.30, 0.15, 1.0),
+            LinearRgba::new(0.95, 0.90, 0.60, 1.0),
+            0.32, 1.6, 0.09,
+        ),
+    ];
+
+    // Create handles and store them for time updates
+    let grass_handles: Vec<Handle<GrassMaterial>> = grass_material_configs
+        .into_iter()
+        .map(|mat| grass_materials.add(mat))
+        .collect();
+
+    material_handles.handles = grass_handles.clone();
+
+    let mut grass_count = 0;
+    let max_grass = 15000; // Higher limit for denser grass
+
+    // Iterate through world and find grass block tops
+    for chunk_x in 0..32 {
+        for chunk_z in 0..32 {
+            for chunk_y in 0..4 {
+                let chunk_pos = IVec3::new(chunk_x, chunk_y, chunk_z);
+                if let Some(chunk) = world.get_chunk(chunk_pos) {
+                    let chunk_origin = VoxelWorld::chunk_to_world(chunk_pos);
+
+                    for x in 0..16 {
+                        for z in 0..16 {
+                            for y in 0..16 {
+                                if grass_count >= max_grass {
+                                    break;
+                                }
+
+                                let local = bevy::math::UVec3::new(x, y, z);
+                                let voxel = chunk.get(local);
+
+                                // Check if this is a grass block with air above
+                                if voxel == VoxelType::TopSoil {
+                                    let world_pos = chunk_origin + IVec3::new(x as i32, y as i32, z as i32);
+                                    let above = world_pos + IVec3::Y;
+
+                                    if let Some(above_voxel) = world.get_voxel(above) {
+                                        if above_voxel == VoxelType::Air {
+                                            // Spawn grass blades with some randomness
+                                            let hash = simple_hash(world_pos.x, world_pos.z);
+
+                                            // Spawn on ~60% of grass blocks for denser coverage
+                                            if hash > 0.4 {
+                                                let blade_count = 3 + (hash * 4.0) as i32;
+
+                                                for i in 0..blade_count {
+                                                    let offset_x = (simple_hash(world_pos.x + i * 17, world_pos.z) - 0.5) * 0.9;
+                                                    let offset_z = (simple_hash(world_pos.x, world_pos.z + i * 23) - 0.5) * 0.9;
+                                                    let rotation = simple_hash(world_pos.x * 7 + i, world_pos.z * 11) * std::f32::consts::TAU;
+                                                    let scale = 0.6 + simple_hash(world_pos.x + i, world_pos.z + i * 5) * 0.8;
+
+                                                    // Pick material based on hash for color variation
+                                                    let material_idx = ((simple_hash(world_pos.x + i * 3, world_pos.z + i * 7) * 4.0) as usize) % grass_handles.len();
+
+                                                    commands.spawn((
+                                                        Mesh3d(grass_mesh.clone()),
+                                                        MeshMaterial3d(grass_handles[material_idx].clone()),
+                                                        Transform::from_xyz(
+                                                            world_pos.x as f32 + 0.5 + offset_x,
+                                                            world_pos.y as f32 + 1.0,
+                                                            world_pos.z as f32 + 0.5 + offset_z,
+                                                        )
+                                                        .with_rotation(Quat::from_rotation_y(rotation))
+                                                        .with_scale(Vec3::splat(scale)),
+                                                        GrassBlade,
+                                                    ));
+                                                    grass_count += 1;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    info!("Spawned {} grass blades with wind animation", grass_count);
+}
+
+/// Create a grass blade mesh (crossed quads) - taller for Valheim look
+fn create_grass_blade_mesh() -> Mesh {
+    let height = 1.4; // Taller grass like Valheim
+    let width = 0.18;
+
+    // Two crossed quads for X shape when viewed from above
+    // UV.y goes from 1 (bottom) to 0 (top) for shader compatibility
+    let positions = vec![
+        // Quad 1 (aligned with X axis)
+        [-width, 0.0, 0.0],
+        [width, 0.0, 0.0],
+        [width * 0.2, height, 0.0], // Narrower at top
+        [-width * 0.2, height, 0.0],
+        // Quad 2 (aligned with Z axis)
+        [0.0, 0.0, -width],
+        [0.0, 0.0, width],
+        [0.0, height, width * 0.2],
+        [0.0, height, -width * 0.2],
+    ];
+
+    let normals = vec![
+        [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0],
+    ];
+
+    // UVs: y=1 at bottom (no movement), y=0 at top (max movement)
+    let uvs = vec![
+        [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0],
+        [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0],
+    ];
+
+    // Vertex colors for additional variation (shader will blend base_color to tip_color)
+    let colors: Vec<[f32; 4]> = vec![
+        [0.35, 0.30, 0.15, 1.0], [0.35, 0.30, 0.15, 1.0], [0.95, 0.85, 0.45, 1.0], [0.95, 0.85, 0.45, 1.0],
+        [0.35, 0.30, 0.15, 1.0], [0.35, 0.30, 0.15, 1.0], [0.95, 0.85, 0.45, 1.0], [0.95, 0.85, 0.45, 1.0],
+    ];
+
+    let indices = vec![
+        0, 1, 2, 0, 2, 3, // Quad 1 front
+        0, 2, 1, 0, 3, 2, // Quad 1 back
+        4, 5, 6, 4, 6, 7, // Quad 2 front
+        4, 6, 5, 4, 7, 6, // Quad 2 back
+    ];
+
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}
+
+/// Spawn rock props on the terrain
+pub fn spawn_rock_props(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    world: Res<VoxelWorld>,
+    mut spawned: ResMut<RocksSpawned>,
+) {
+    if spawned.0 {
+        return;
+    }
+
+    // Wait until world has at least one chunk loaded
+    if world.get_chunk(IVec3::ZERO).is_none() {
+        return;
+    }
+
+    spawned.0 = true;
+
+    // Create rock material
+    let rock_material = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.45, 0.43, 0.4),
+        perceptual_roughness: 0.9,
+        ..default()
+    });
+
+    // Create a few rock mesh variations
+    let rock_meshes = vec![
+        meshes.add(create_rock_mesh(1.0, 0)),
+        meshes.add(create_rock_mesh(0.7, 1)),
+        meshes.add(create_rock_mesh(1.3, 2)),
+    ];
+
+    let mut rock_count = 0;
+    let max_rocks = 200;
+
+    // Scan world for places to put rocks
+    for x in 0..512 {
+        for z in 0..512 {
+            if rock_count >= max_rocks {
+                break;
+            }
+
+            let world_x = x as i32;
+            let world_z = z as i32;
+
+            // Use hash to determine if rock spawns here
+            let hash = simple_hash(world_x * 31, world_z * 37);
+            if hash > 0.995 { // Very sparse rocks
+                // Find surface height
+                for y in (0..64).rev() {
+                    let pos = IVec3::new(world_x, y, world_z);
+                    if let Some(voxel) = world.get_voxel(pos) {
+                        if voxel.is_solid() && voxel != VoxelType::Water {
+                            // Found surface - spawn rock
+                            let rock_mesh = &rock_meshes[(hash * 3.0) as usize % 3];
+                            let scale = 0.5 + hash * 1.5;
+                            let rotation = hash * std::f32::consts::TAU;
+
+                            commands.spawn((
+                                Mesh3d(rock_mesh.clone()),
+                                MeshMaterial3d(rock_material.clone()),
+                                Transform::from_xyz(
+                                    world_x as f32 + 0.5,
+                                    y as f32 + 1.0 + scale * 0.3,
+                                    world_z as f32 + 0.5,
+                                )
+                                .with_rotation(Quat::from_rotation_y(rotation))
+                                .with_scale(Vec3::new(scale, scale * 0.6, scale)),
+                                RockProp,
+                            ));
+                            rock_count += 1;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    info!("Spawned {} rock props", rock_count);
+}
+
+/// Create a simple rock mesh (deformed sphere)
+fn create_rock_mesh(size: f32, _seed: i32) -> Mesh {
+    // Use Bevy's built-in sphere and we'll deform it via scale
+    Sphere::new(size * 0.5).mesh().build()
+}
+
+/// Simple hash function for deterministic randomness
+fn simple_hash(x: i32, z: i32) -> f32 {
+    let n = x.wrapping_mul(374761393).wrapping_add(z.wrapping_mul(668265263));
+    let n = (n ^ (n >> 13)).wrapping_mul(1274126177);
+    let n = n ^ (n >> 16);
+    (n as u32 as f32) / (u32::MAX as f32)
+}
+
+/// Spawn floating particles around the player for that Valheim atmosphere
+pub fn spawn_floating_particles(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut spawned: ResMut<ParticlesSpawned>,
+    camera_query: Query<&Transform, With<PlayerCamera>>,
+) {
+    if spawned.0 {
+        return;
+    }
+
+    let Ok(camera_transform) = camera_query.single() else {
+        return;
+    };
+
+    spawned.0 = true;
+
+    // TEMPORARY: Skip particle spawning to debug blue shapes
+    info!("Particle spawning disabled for debugging");
+    return;
+
+    let camera_pos = camera_transform.translation;
+
+    // Small glowing particle mesh
+    let particle_mesh = meshes.add(Sphere::new(0.08).mesh().build());
+
+    // Warm golden pollen material (emissive for glow with bloom)
+    let pollen_material = materials.add(StandardMaterial {
+        base_color: Color::srgba(1.0, 0.95, 0.7, 0.6),
+        emissive: LinearRgba::new(2.0, 1.8, 1.0, 1.0),
+        alpha_mode: AlphaMode::Blend,
+        unlit: true,
+        ..default()
+    });
+
+    // Soft white dust material
+    let dust_material = materials.add(StandardMaterial {
+        base_color: Color::srgba(1.0, 1.0, 1.0, 0.4),
+        emissive: LinearRgba::new(0.5, 0.5, 0.6, 1.0),
+        alpha_mode: AlphaMode::Blend,
+        unlit: true,
+        ..default()
+    });
+
+    let particle_count = 150;
+
+    for i in 0..particle_count {
+        let hash1 = simple_hash(i * 17, i * 31);
+        let hash2 = simple_hash(i * 23, i * 47);
+        let hash3 = simple_hash(i * 13, i * 53);
+
+        // Spawn in a sphere around camera start position
+        let radius = 30.0 + hash1 * 70.0;
+        let angle = hash2 * std::f32::consts::TAU;
+        let height = hash3 * 40.0 + 5.0;
+
+        let x = camera_pos.x + angle.cos() * radius;
+        let z = camera_pos.z + angle.sin() * radius;
+        let y = camera_pos.y - 20.0 + height;
+
+        let material = if hash1 > 0.6 {
+            pollen_material.clone()
+        } else {
+            dust_material.clone()
+        };
+
+        let scale = 0.5 + hash2 * 1.0;
+
+        commands.spawn((
+            Mesh3d(particle_mesh.clone()),
+            MeshMaterial3d(material),
+            Transform::from_xyz(x, y, z).with_scale(Vec3::splat(scale)),
+            FloatingParticle {
+                base_y: y,
+                phase: hash3 * std::f32::consts::TAU,
+                speed: 0.3 + hash1 * 0.5,
+                drift: Vec3::new(
+                    (hash1 - 0.5) * 2.0,
+                    0.0,
+                    (hash2 - 0.5) * 2.0,
+                ),
+            },
+        ));
+    }
+
+    info!("Spawned {} floating particles", particle_count);
+}
+
+/// Animate floating particles with gentle bobbing and drift
+pub fn animate_particles(
+    time: Res<Time>,
+    camera_query: Query<&Transform, With<PlayerCamera>>,
+    mut particles: Query<(&mut Transform, &FloatingParticle), Without<PlayerCamera>>,
+) {
+    let Ok(camera_transform) = camera_query.single() else {
+        return;
+    };
+
+    let camera_pos = camera_transform.translation;
+    let t = time.elapsed_secs();
+
+    for (mut transform, particle) in particles.iter_mut() {
+        // Gentle bobbing motion
+        let bob = (t * particle.speed + particle.phase).sin() * 0.5;
+        transform.translation.y = particle.base_y + bob;
+
+        // Slow drift
+        transform.translation.x += particle.drift.x * time.delta_secs() * 0.3;
+        transform.translation.z += particle.drift.z * time.delta_secs() * 0.3;
+
+        // Wrap particles around player (keep them in view)
+        let dist_to_camera = Vec2::new(
+            transform.translation.x - camera_pos.x,
+            transform.translation.z - camera_pos.z,
+        ).length();
+
+        if dist_to_camera > 100.0 {
+            // Teleport to other side of player
+            let angle = simple_hash(
+                (transform.translation.x * 100.0) as i32,
+                (transform.translation.z * 100.0) as i32,
+            ) * std::f32::consts::TAU;
+            let new_radius = 30.0 + simple_hash(
+                (transform.translation.x * 50.0) as i32,
+                (transform.translation.z * 50.0) as i32,
+            ) * 40.0;
+            transform.translation.x = camera_pos.x + angle.cos() * new_radius;
+            transform.translation.z = camera_pos.z + angle.sin() * new_radius;
+        }
+    }
+}
+
+
+/// Plugin for vegetation and props
+pub struct VegetationPlugin;
+
+impl Plugin for VegetationPlugin {
+    fn build(&self, app: &mut App) {
+        app
+            // Add the grass material plugin first
+            .add_plugins(GrassMaterialPlugin)
+            .init_resource::<GrassSpawned>()
+            .init_resource::<RocksSpawned>()
+            .init_resource::<ParticlesSpawned>()
+            // Run in Update to ensure world is populated
+            .add_systems(
+                Update,
+                (
+                    spawn_grass_blades,
+                    spawn_rock_props,
+                    spawn_floating_particles,
+                    animate_particles,
+                ),
+            );
+    }
+}
