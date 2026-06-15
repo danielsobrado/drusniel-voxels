@@ -2,21 +2,39 @@
 
 Rust voxel game prototype based on the Drusniel world.
 
-![v0.3 Preview](assets/images/V0.3.jpg)
+![v0.4 Preview](assets/images/v0.4-props1.jpg)
 
-## v0.3
+## v0.4
 
-This version improves terrain rendering, materials, and movement over uneven voxel terrain:
+This version expands the project into a larger terrain, rendering, building, and world
+interaction prototype.
 
-- PBR material blending for terrain
-- Parallax-style rock texture detail
-- Smooth triplanar material blending with vertex weights
-- Surface Nets seam and UV mapping improvements
-- Repeat sampler fixes for terrain textures
-- Material and mesh generation updates
-- Smoother slope movement
-- Bilinear terrain height detection for the character controller
-- Step-up movement logic for better traversal
+Highlights:
+
+- HDR rendering pipeline with tonemapping, bloom, debanding, and color grading
+- Radiance-cascade global illumination experiments
+- Adaptive GI quality presets
+- GTAO ambient occlusion
+- PCSS soft shadows
+- Distance fog and volumetric fog
+- Volumetric clouds
+- Gerstner-style water with foam and caustic effects
+- Weather particles for rain, snow, and dust
+- Multi-layer vegetation wind animation
+- Grass subsurface scattering and contact-shadow support
+- Environment-map lighting for PBR reflections and ambient lighting
+- Texture arrays with mipmaps and anisotropic filtering
+- Expanded PBR materials for terrain, props, and buildings
+- Chunk LOD with skirts and GPU fallback paths
+- Prop LOD with billboards and mesh decimation
+- Extended prop view distances
+- Snap-point building system with ghost previews
+- Terrain sculpting tools for raise, lower, level, and smooth operations
+- Terrain conforming for placed props and buildings
+- Save/load persistence
+- Prop placement persistence
+- Minimap, inventory, hotbar, chat, settings, debug overlays, and photo mode
+- Config-driven tuning for rendering, weather, water, terrain, props, camera, and input
 
 ## Setup
 
@@ -38,14 +56,25 @@ cargo run
 |---|---|
 | `src/main.rs` | Runtime entry point |
 | `src/lib.rs` | Shared module root |
-| `src/camera/` | Camera controller and plugin |
-| `src/config/` | YAML config loading |
-| `src/environment.rs` | Environment and sky setup |
-| `src/rendering/` | Materials, atlas loading, triplanar terrain, and rendering plugin |
-| `src/vegetation/` | Grass material setup |
-| `src/voxel/` | Voxel world, chunks, meshing, persistence, and types |
-| `assets/config/` | World and voxel type settings |
+| `src/atmosphere/` | Atmosphere, fog, and sky integration |
+| `src/building/` | Snap-point building system |
+| `src/camera/` | Camera controller and configuration |
+| `src/config/` | YAML and JSON config loading |
+| `src/input/` | Input bindings and manager |
+| `src/interaction/` | Targeting, editing, palette, and debug interaction |
+| `src/menu/` | Menus, settings, multiplayer screen, and UI |
+| `src/particles/` | Weather particle systems |
+| `src/physics/` | Physics plugin, layers, and terrain colliders |
+| `src/player/` | Player controller, input, spawning, and plugin |
+| `src/props/` | Prop loading, placement, LOD, persistence, and rendering |
+| `src/rendering/` | Rendering pipeline, materials, shadows, GI, water, clouds, and effects |
+| `src/terrain/` | Terrain generation and terrain editing tools |
+| `src/vegetation/` | Grass and wind animation |
+| `src/voxel/` | Voxel world, chunks, meshing, LOD, occlusion, and persistence |
+| `assets/config/` | Runtime configuration files |
 | `assets/models/` | Runtime model assets |
-| `assets/pbr/` | PBR terrain texture sets |
+| `assets/pbr/` | PBR texture sets |
 | `assets/shaders/` | WGSL shaders |
-| `assets/textures/atlas.png` | Runtime texture atlas |
+| `assets/textures/` | Texture atlas, skybox, billboards, and terrain textures |
+| `benches/` | Benchmark targets |
+| `tests/` | Rust test suite |

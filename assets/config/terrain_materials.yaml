@@ -1,0 +1,49 @@
+# Terrain Materials Configuration - Keep Lean for RTX 40xx
+# Triplanar triples every texture sample. Keep terrain simple.
+#
+# Texture samples per fragment: 6 (albedo + normal triplanar)
+# Target: ~64 chunks, 1.5ms frame budget
+
+texture_format:
+  resolution: 512  # Intentionally low-res (Valheim style)
+  maps:
+    - albedo
+    - normal
+    # No roughness maps - uniform values per material
+    # No AO maps - SSAO handles ambient occlusion screen-space
+
+materials:
+  grass:
+    roughness: 0.85  # Uniform value - no texture map
+    parallax: 0.0    # Skip parallax for terrain
+    description: "Lush meadow grass for temperate biomes"
+
+  dirt:
+    roughness: 0.92  # Slightly rougher than grass
+    parallax: 0.0
+    description: "Exposed soil and tilled earth"
+
+  rock:
+    roughness: 0.90
+    parallax: 0.04   # Only terrain material with parallax (cliffs)
+    description: "Exposed bedrock and cliff faces"
+
+  sand:
+    roughness: 0.98  # Very rough, minimal specular
+    parallax: 0.0
+    description: "Beach and desert sand"
+
+  tilled_soil:
+    roughness: 0.92
+    parallax: 0.0
+    description: "Freshly tilled farming soil"
+
+# Why no terrain AO maps?
+# - SSAO handles ambient occlusion screen-space
+# - Terrain AO maps look flat/baked compared to dynamic SSAO
+# - Saves 3 texture samples per fragment (significant for triplanar)
+#
+# Why uniform roughness?
+# - Natural terrain has fairly consistent roughness per material type
+# - Saves 3 texture samples per fragment
+# - Visual difference is minimal compared to buildings

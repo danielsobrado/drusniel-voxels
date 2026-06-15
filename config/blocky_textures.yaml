@@ -1,0 +1,30 @@
+# Blocky Terrain Texture Configuration
+# Maps voxel types to atlas tile indices for the blocky (V0.1) rendering mode.
+# Each block type has { top, side, bottom } atlas tile indices.
+# Atlas layout: 4x4 grid, tiles numbered 0-15 left-to-right, top-to-bottom.
+#
+# Defaults (approximate):
+#   Grass: Top=3, Side=7, Bottom=0
+#   Dirt:  Top=0, Side=0, Bottom=0
+#   Rock:  Top=1, Side=1, Bottom=1
+#   Sand:  Top=4, Side=4, Bottom=4
+
+
+
+
+
+
+
+
+
+
+# Atlas tile mapping (editable via in-game UI)
+# Each block type has { top, side, bottom } atlas tile indices
+
+# Atlas tile mapping (editable via in-game UI)
+# Each block type has { top, side, bottom } atlas tile indices
+atlas_mapping:
+  grass: { top: 0, side: 7, bottom: 0 }
+  dirt: { top: 1, side: 1, bottom: 1 }
+  rock: { top: 2, side: 2, bottom: 2 }
+  sand: { top: 4, side: 4, bottom: 4 }

@@ -1,13 +1,29 @@
-use bevy::prelude::*;
-use bevy::input::mouse::MouseMotion;
-use bevy::core_pipeline::tonemapping::Tonemapping;
+use crate::atmosphere::{fog_camera_components, AtmosphereConfig, FogConfig};
+use crate::camera::config::{CameraConfig, CameraExposureConfig};
+use crate::interaction::palette::PlacementPaletteState;
+use crate::inventory_ui::InventoryUiState;
+use crate::map::MapState;
+use crate::menu::{AntiAliasing, PauseMenuState, SettingsState, ShadowFiltering, VisualSettings};
+use crate::player::Player;
+use crate::rendering::capabilities::GraphicsCapabilities;
+use crate::rendering::cinematic::CinematicCamera;
+use crate::rendering::ray_tracing::RayTracingSettings;
+use crate::voxel::types::Voxel;
+use crate::voxel::world::VoxelWorld;
+use bevy::anti_alias::contrast_adaptive_sharpening::ContrastAdaptiveSharpening;
+use bevy::anti_alias::fxaa::Fxaa;
+use bevy::anti_alias::taa::TemporalAntiAliasing;
+use bevy::camera::Exposure;
 use bevy::core_pipeline::Skybox;
-use bevy::pbr::{DistanceFog, FogFalloff};
-use bevy::post_process::bloom::Bloom;
+use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
+use bevy::input::mouse::MouseMotion;
+use bevy::light::ShadowFilteringMethod;
+use bevy::pbr::ScreenSpaceReflections;
+use bevy::post_process::bloom::{Bloom, BloomCompositeMode};
+use bevy::prelude::*;
+use bevy::render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, Hdr};
 use bevy::window::{CursorGrabMode, CursorOptions};
 use bevy_water::ImageReformat;
-use crate::voxel::world::VoxelWorld;
-use crate::voxel::types::Voxel;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum CameraMode {
@@ -25,96 +41,350 @@ pub struct PlayerCamera {
 
     // Fly mode settings
     pub fly_speed: f32,
-
-    // Walk mode settings
-    pub walk_speed: f32,
-    pub run_speed: f32,
-    pub jump_force: f32,
-    pub gravity: f32,
-    pub velocity: Vec3,
-    pub grounded: bool,
-    pub player_height: f32,
-    pub player_radius: f32,
 }
 
-impl Default for PlayerCamera {
-    fn default() -> Self {
+impl PlayerCamera {
+    pub fn from_config(config: &CameraConfig) -> Self {
         Self {
-            sensitivity: 0.002,
+            sensitivity: config.movement.sensitivity,
             pitch: 0.0,
             yaw: 0.0,
-            mode: CameraMode::Walk, // Start in walk mode
-
-            fly_speed: 40.0,
-
-            walk_speed: 8.0,
-            run_speed: 16.0,
-            jump_force: 12.0,
-            gravity: 30.0,
-            velocity: Vec3::ZERO,
-            grounded: false,
-            player_height: 1.8,
-            player_radius: 0.3,
+            mode: CameraMode::Walk,
+            fly_speed: config.movement.fly_speed,
         }
     }
 }
 
-pub fn spawn_camera(mut commands: Commands, asset_server: Res<AssetServer>) {
-    // Load the skybox cubemap image with cubemap reformat 
+impl Default for PlayerCamera {
+    fn default() -> Self {
+        let config = CameraConfig::default();
+        Self::from_config(&config)
+    }
+}
+
+pub fn spawn_camera(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    capabilities: Res<GraphicsCapabilities>,
+    ray_tracing: Res<RayTracingSettings>,
+    fog_config: Res<FogConfig>,
+    camera_config: Res<CameraConfig>,
+    exposure_config: Res<CameraExposureConfig>,
+    settings_state: Res<SettingsState>,
+    atmo_config: Option<Res<AtmosphereConfig>>,
+) {
+    // Check if Bevy's native atmosphere is handling sky rendering
+    // If enabled, we skip the Skybox to let the procedural atmosphere render
+    let native_atmosphere_enabled = atmo_config.map(|c| c.enabled).unwrap_or(false);
+
+    // Daytime skybox (same asset used in v0.3).
     let skybox_image = ImageReformat::cubemap(
         &mut commands,
         &asset_server,
         "textures/table_mountain_2_puresky_4k_cubemap.jpg",
     );
-    
-    commands.spawn((
+
+    let mut camera = commands.spawn((
         Camera3d::default(),
-        Bloom {
-            intensity: 0.06, // Subtle glow on bright highlights
+        Camera::default(),
+        Projection::Perspective(PerspectiveProjection {
+            near: 0.02,
             ..default()
+        }),
+        match settings_state.anti_aliasing {
+            AntiAliasing::Msaa4x => Msaa::Sample4,
+            _ => Msaa::Off,
         },
-        Transform::from_xyz(256.0, 50.0, 256.0).looking_at(Vec3::new(200.0, 30.0, 200.0), Vec3::Y),
-        PlayerCamera::default(),
-        // Tonemapping for better HDR look
-        Tonemapping::AcesFitted,
-        // Skybox with the cubemap
-        Skybox {
-            image: skybox_image,
-            brightness: 1500.0,
+        Exposure {
+            ev100: exposure_config.ev100_clamped(),
+        },
+        Transform::from_xyz(
+            camera_config.spawn.position.x,
+            camera_config.spawn.position.y,
+            camera_config.spawn.position.z,
+        )
+        .looking_at(camera_config.spawn.look_at, Vec3::Y),
+        PlayerCamera::from_config(&camera_config),
+        match settings_state.shadow_filtering {
+            ShadowFiltering::Gaussian => ShadowFilteringMethod::Gaussian,
+            ShadowFiltering::Hardware2x2 => ShadowFilteringMethod::Hardware2x2,
+            ShadowFiltering::Temporal => ShadowFilteringMethod::Temporal,
+        },
+        fog_camera_components(&fog_config),
+        // Keep EnvironmentMapLight for IBL even with native atmosphere
+        EnvironmentMapLight {
+            diffuse_map: skybox_image.clone(),
+            specular_map: skybox_image.clone(),
+            intensity: 400.0, // Lower than skybox to avoid over-lighting
             rotation: Quat::IDENTITY,
+            affects_lightmapped_mesh_diffuse: false,
         },
-        // Atmospheric fog with warm/pink horizon tint
-        DistanceFog {
-            color: Color::srgba(0.7, 0.8, 0.95, 1.0), // Soft blue-gray base
-            directional_light_color: Color::srgba(1.0, 0.85, 0.7, 1.0), // Warm golden sun scatter
-            directional_light_exponent: 20.0,
-            falloff: FogFalloff::ExponentialSquared { density: 0.0015 },
+        CinematicCamera,
+    ));
+
+    // Only add Skybox if native atmosphere is NOT enabled
+    // The Skybox would override the procedural atmosphere rendering
+    if !native_atmosphere_enabled {
+        camera.insert(Skybox {
+            image: skybox_image,
+            brightness: 800.0,  // Lower skybox brightness
+            rotation: Quat::IDENTITY,
+        });
+    } else {
+        info!("Native atmosphere enabled - skipping cubemap Skybox");
+    }
+
+    // Keep HDR + tonemapping enabled on all GPUs; otherwise custom materials that output HDR-linear
+    // end up looking dark due to missing exposure/tonemapping.
+    camera.insert((
+        Hdr,
+        Tonemapping::AcesFitted,  // v0.3 tonemapping for natural colors
+        DebandDither::Enabled,
+        ColorGrading {
+            global: ColorGradingGlobal {
+                exposure: 0.0,           // Neutral exposure (v0.3 style)
+                temperature: 0.0,        // Neutral temperature
+                tint: 0.0,               // Neutral tint
+                hue: 0.0,
+                post_saturation: 1.0,    // Neutral saturation
+                ..default()
+            },
+            shadows: ColorGradingSection {
+                saturation: 1.0,
+                contrast: 1.0,
+                gamma: 1.0,
+                gain: 1.0,
+                lift: 0.0,
+            },
+            midtones: ColorGradingSection {
+                saturation: 1.0,
+                contrast: 1.0,
+                gamma: 1.0,
+                gain: 1.0,
+                lift: 0.0,
+            },
+            highlights: ColorGradingSection {
+                saturation: 1.0,
+                contrast: 1.0,
+                gamma: 1.0,
+                gain: 1.0,
+                lift: 0.0,
+            },
         },
     ));
+    if !capabilities.integrated_gpu {
+        camera.insert(Bloom {
+            intensity: camera_config.rendering.bloom_intensity,
+            composite_mode: BloomCompositeMode::EnergyConserving,
+            ..default()
+        });
+    }
+
+    match settings_state.anti_aliasing {
+        AntiAliasing::Fxaa => {
+            camera.insert(Fxaa::default());
+        }
+        AntiAliasing::Taa => {
+            camera.insert((
+                TemporalAntiAliasing::default(),
+                ContrastAdaptiveSharpening {
+                    enabled: true,
+                    sharpening_strength: 0.6,
+                    denoise: false,
+                },
+            ));
+        }
+        _ => {}
+    }
+
+    // Note: VolumetricFog is already added via fog_camera_components() at line 114
+    // The sync_fog_toggles system in fog.rs handles enabling/disabling based on config
+
+    // SSR currently disabled: enabling deferred + SSR can exceed per-stage texture binding limits
+    // on some environments, causing a render-prepass panic.
+    let _ = (&ray_tracing, &capabilities);
+}
+
+pub fn update_camera_anti_aliasing(
+    settings_state: Res<SettingsState>,
+    mut commands: Commands,
+    mut camera_query: Query<(Entity, &mut Msaa), With<PlayerCamera>>,
+) {
+    if !settings_state.is_changed() {
+        return;
+    }
+
+    for (entity, mut msaa) in camera_query.iter_mut() {
+        let mut camera = commands.entity(entity);
+        // Remove all AA-related components before applying new ones
+        camera.remove::<Fxaa>();
+        camera.remove::<TemporalAntiAliasing>();
+        camera.remove::<ContrastAdaptiveSharpening>();
+
+        match settings_state.anti_aliasing {
+            AntiAliasing::None => {
+                *msaa = Msaa::Off;
+            }
+            AntiAliasing::Fxaa => {
+                *msaa = Msaa::Off;
+                camera.insert(Fxaa::default());
+            }
+            AntiAliasing::Msaa4x => {
+                *msaa = Msaa::Sample4;
+            }
+            AntiAliasing::Taa => {
+                *msaa = Msaa::Off;
+                camera.insert((
+                    TemporalAntiAliasing::default(),
+                    ContrastAdaptiveSharpening {
+                        enabled: true,
+                        sharpening_strength: 0.6,
+                        denoise: false,
+                    },
+                ));
+            }
+        }
+    }
+}
+
+pub fn update_camera_exposure(
+    exposure_config: Res<CameraExposureConfig>,
+    mut cameras: Query<&mut Exposure, With<PlayerCamera>>,
+) {
+    let ev100 = exposure_config.ev100_clamped();
+    for mut exposure in cameras.iter_mut() {
+        exposure.ev100 = ev100;
+    }
+}
+
+pub fn update_camera_skybox_from_atmosphere(
+    atmosphere: Res<crate::environment::AtmosphereSettings>,
+    mut cameras: Query<(&mut Skybox, &mut EnvironmentMapLight), With<PlayerCamera>>,
+) {
+    if !atmosphere.is_changed() {
+        return;
+    }
+
+    let altitude = if atmosphere.cycle_enabled {
+        let phase = atmosphere.time / atmosphere.day_length;
+        let theta = phase * std::f32::consts::TAU;
+        theta.sin()
+    } else {
+        1.0
+    };
+
+    let daylight = smoothstep(-0.1, 0.25, altitude);
+    let skybox_brightness = lerp(1500.0, 6000.0, daylight);
+    // Environment map intensity tracks skybox but stays lower to avoid over-lighting
+    let env_intensity = lerp(100.0, 400.0, daylight);
+
+    for (mut skybox, mut env_map) in cameras.iter_mut() {
+        skybox.brightness = skybox_brightness;
+        env_map.intensity = env_intensity;
+    }
+}
+
+pub fn update_camera_shadow_filtering(
+    settings_state: Res<SettingsState>,
+    mut camera_query: Query<&mut ShadowFilteringMethod, With<PlayerCamera>>,
+) {
+    if !settings_state.is_changed() {
+        return;
+    }
+
+    for mut method in camera_query.iter_mut() {
+        *method = match settings_state.shadow_filtering {
+            ShadowFiltering::Gaussian => ShadowFilteringMethod::Gaussian,
+            ShadowFiltering::Hardware2x2 => ShadowFilteringMethod::Hardware2x2,
+            ShadowFiltering::Temporal => ShadowFilteringMethod::Temporal,
+        };
+    }
+}
+
+pub fn update_ray_tracing_on_camera(
+    capabilities: Res<GraphicsCapabilities>,
+    settings: Res<RayTracingSettings>,
+    mut commands: Commands,
+    mut cameras: Query<(Entity, Option<&ScreenSpaceReflections>), With<PlayerCamera>>,
+) {
+    if !(settings.is_changed() || capabilities.is_changed()) {
+        return;
+    }
+
+    // SSR currently disabled: avoid triggering deferred/prepass pipeline issues.
+    let should_enable = false;
+    let _ = (&settings, &capabilities);
+
+    for (entity, current) in cameras.iter_mut() {
+        match (should_enable, current.is_some()) {
+            (true, false) => {}
+            (false, true) => {
+                commands
+                    .entity(entity)
+                    .remove::<ScreenSpaceReflections>();
+            }
+            _ => {}
+        }
+    }
 }
 
 pub fn player_camera_system(
     mut query: Query<(&mut Transform, &mut PlayerCamera)>,
     keys: Res<ButtonInput<KeyCode>>,
-    mut mouse_motion: EventReader<MouseMotion>,
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    mut mouse_motion: MessageReader<MouseMotion>,
     time: Res<Time>,
     mut windows: Query<(&mut Window, &mut CursorOptions)>,
+    pause_menu: Res<PauseMenuState>,
+    palette: Res<PlacementPaletteState>,
+    map_state: Res<MapState>,
+    inventory_ui: Res<InventoryUiState>,
+    camera_config: Res<CameraConfig>,
     world: Res<VoxelWorld>,
+    mut cursor_captured: Local<bool>,
 ) {
-    let Ok((_window, mut cursor_options)) = windows.single_mut() else {
+    let Ok((window, mut cursor_options)) = windows.single_mut() else {
         return;
     };
     let dt = time.delta_secs();
 
-    // Toggle cursor lock with Escape
-    if keys.just_pressed(KeyCode::Escape) {
-        cursor_options.visible = !cursor_options.visible;
-        cursor_options.grab_mode = if cursor_options.visible {
-            CursorGrabMode::None
-        } else {
-            CursorGrabMode::Locked
-        };
+    let ui_open = pause_menu.open || palette.open || map_state.open || inventory_ui.open;
+
+    // Never keep the cursor grabbed when the window isn't focused.
+    // Otherwise alt-tab / clicking other windows can feel like the mouse is "stuck".
+    if !window.focused {
+        *cursor_captured = false;
     }
+
+    // Escape always releases the cursor (pause/menu systems can still handle it too).
+    if keys.just_pressed(KeyCode::Escape) {
+        *cursor_captured = false;
+    }
+
+    // Any UI that needs a cursor releases it.
+    if ui_open {
+        *cursor_captured = false;
+    }
+
+    if !*cursor_captured {
+        cursor_options.visible = true;
+        cursor_options.grab_mode = CursorGrabMode::None;
+
+        // Drain motion events so we don't apply a large accumulated delta when capture starts.
+        for _ in mouse_motion.read() {}
+
+        // Click-to-capture when focused and not in UI.
+        if window.focused && !ui_open && mouse_buttons.just_pressed(MouseButton::Left) {
+            *cursor_captured = true;
+            cursor_options.visible = false;
+            cursor_options.grab_mode = CursorGrabMode::Locked;
+        } else {
+            return;
+        }
+    }
+
+    cursor_options.visible = false;
+    cursor_options.grab_mode = CursorGrabMode::Locked;
 
     for (mut transform, mut camera) in query.iter_mut() {
         // Toggle between fly and walk mode with Tab
@@ -123,8 +393,6 @@ pub fn player_camera_system(
                 CameraMode::Fly => CameraMode::Walk,
                 CameraMode::Walk => CameraMode::Fly,
             };
-            camera.velocity = Vec3::ZERO;
-            // Log mode change
             match camera.mode {
                 CameraMode::Fly => info!("Switched to FLY mode"),
                 CameraMode::Walk => info!("Switched to WALK mode"),
@@ -133,11 +401,14 @@ pub fn player_camera_system(
 
         // Reset position with R
         if keys.just_pressed(KeyCode::KeyR) {
-            camera.yaw = -2.35;
-            camera.pitch = -0.4;
-            camera.velocity = Vec3::ZERO;
-            *transform = Transform::from_xyz(256.0, 50.0, 256.0)
-                .looking_at(Vec3::new(200.0, 30.0, 200.0), Vec3::Y);
+            camera.yaw = camera_config.movement.reset_yaw;
+            camera.pitch = camera_config.movement.reset_pitch;
+            *transform = Transform::from_xyz(
+                camera_config.spawn.position.x,
+                camera_config.spawn.position.y,
+                camera_config.spawn.position.z,
+            )
+            .looking_at(camera_config.spawn.look_at, Vec3::Y);
         }
 
         if cursor_options.visible {
@@ -148,7 +419,9 @@ pub fn player_camera_system(
         for ev in mouse_motion.read() {
             camera.yaw -= ev.delta.x * camera.sensitivity;
             camera.pitch -= ev.delta.y * camera.sensitivity;
-            camera.pitch = camera.pitch.clamp(-1.5, 1.5);
+            camera.pitch = camera
+                .pitch
+                .clamp(camera_config.movement.pitch_min, camera_config.movement.pitch_max);
         }
 
         transform.rotation = Quat::from_euler(EulerRot::YXZ, camera.yaw, camera.pitch, 0.0);
@@ -156,10 +429,10 @@ pub fn player_camera_system(
         // Movement based on mode
         match camera.mode {
             CameraMode::Fly => {
-                fly_movement(&mut transform, &camera, &keys, dt);
+                fly_movement(&mut transform, &camera, &keys, dt, &camera_config, &world);
             }
             CameraMode::Walk => {
-                walk_movement(&mut transform, &mut camera, &keys, dt, &world);
+                // Walk mode is handled by the player controller.
             }
         }
     }
@@ -170,6 +443,8 @@ fn fly_movement(
     camera: &PlayerCamera,
     keys: &Res<ButtonInput<KeyCode>>,
     dt: f32,
+    config: &CameraConfig,
+    world: &VoxelWorld,
 ) {
     let mut velocity = Vec3::ZERO;
     let local_z = transform.local_z();
@@ -196,168 +471,93 @@ fn fly_movement(
     }
 
     let speed = if keys.pressed(KeyCode::ControlLeft) {
-        camera.fly_speed * 3.0 // Turbo fly
+        camera.fly_speed * config.movement.fly_turbo_multiplier
     } else {
         camera.fly_speed
     };
 
-    transform.translation += velocity.normalize_or_zero() * speed * dt;
+    let desired = transform.translation + velocity.normalize_or_zero() * speed * dt;
+    if !camera_intersects_solid(world, desired) {
+        transform.translation = desired;
+    }
 }
 
-fn walk_movement(
-    transform: &mut Transform,
-    camera: &mut PlayerCamera,
-    keys: &Res<ButtonInput<KeyCode>>,
-    dt: f32,
-    world: &VoxelWorld,
+const CAMERA_COLLISION_RADIUS: f32 = 0.2;
+
+fn camera_intersects_solid(world: &VoxelWorld, position: Vec3) -> bool {
+    let offsets = [
+        Vec3::ZERO,
+        Vec3::X * CAMERA_COLLISION_RADIUS,
+        Vec3::NEG_X * CAMERA_COLLISION_RADIUS,
+        Vec3::Y * CAMERA_COLLISION_RADIUS,
+        Vec3::NEG_Y * CAMERA_COLLISION_RADIUS,
+        Vec3::Z * CAMERA_COLLISION_RADIUS,
+        Vec3::NEG_Z * CAMERA_COLLISION_RADIUS,
+    ];
+
+    for offset in offsets {
+        let check = position + offset;
+        let voxel_pos = IVec3::new(
+            check.x.floor() as i32,
+            check.y.floor() as i32,
+            check.z.floor() as i32,
+        );
+        if let Some(voxel) = world.get_voxel(voxel_pos) {
+            if voxel.is_solid() {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+pub fn camera_follow_player(
+    player_query: Query<&Transform, With<Player>>,
+    mut camera_query: Query<(&mut Transform, &PlayerCamera), (With<PlayerCamera>, Without<Player>)>,
+    camera_config: Res<CameraConfig>,
 ) {
-    let local_z = transform.local_z();
-    let forward = -Vec3::new(local_z.x, 0.0, local_z.z).normalize_or_zero();
-    let right = Vec3::new(local_z.z, 0.0, -local_z.x).normalize_or_zero();
-
-    // Horizontal input
-    let mut move_dir = Vec3::ZERO;
-    if keys.pressed(KeyCode::KeyW) {
-        move_dir += forward;
-    }
-    if keys.pressed(KeyCode::KeyS) {
-        move_dir -= forward;
-    }
-    if keys.pressed(KeyCode::KeyA) {
-        move_dir -= right;
-    }
-    if keys.pressed(KeyCode::KeyD) {
-        move_dir += right;
-    }
-
-    // Determine speed (run with shift)
-    let speed = if keys.pressed(KeyCode::ShiftLeft) {
-        camera.run_speed
-    } else {
-        camera.walk_speed
+    let Ok(player_transform) = player_query.single() else {
+        return;
+    };
+    let Ok((mut camera_transform, camera)) = camera_query.single_mut() else {
+        return;
     };
 
-    // Set horizontal velocity
-    let horizontal_velocity = move_dir.normalize_or_zero() * speed;
-    camera.velocity.x = horizontal_velocity.x;
-    camera.velocity.z = horizontal_velocity.z;
-
-    // Ground check - check voxel below feet
-    let feet_pos = transform.translation - Vec3::Y * camera.player_height;
-    let ground_check_pos = IVec3::new(
-        feet_pos.x.floor() as i32,
-        (feet_pos.y - 0.1).floor() as i32,
-        feet_pos.z.floor() as i32,
-    );
-
-    let was_grounded = camera.grounded;
-    camera.grounded = false;
-
-    // Check ground
-    if let Some(voxel) = world.get_voxel(ground_check_pos) {
-        if voxel.is_solid() {
-            let ground_y = ground_check_pos.y as f32 + 1.0 + camera.player_height;
-            if transform.translation.y <= ground_y + 0.1 {
-                camera.grounded = true;
-                if camera.velocity.y < 0.0 {
-                    camera.velocity.y = 0.0;
-                }
-                transform.translation.y = ground_y;
-            }
-        }
-    }
-
-    // Also check slightly ahead for slopes
-    let ahead_pos = feet_pos + move_dir.normalize_or_zero() * 0.5;
-    let ahead_ground = IVec3::new(
-        ahead_pos.x.floor() as i32,
-        (ahead_pos.y - 0.1).floor() as i32,
-        ahead_pos.z.floor() as i32,
-    );
-
-    if let Some(voxel) = world.get_voxel(ahead_ground) {
-        if voxel.is_solid() {
-            let ground_y = ahead_ground.y as f32 + 1.0 + camera.player_height;
-            if transform.translation.y < ground_y && (ground_y - transform.translation.y) < 1.2 {
-                // Step up
-                transform.translation.y = ground_y;
-                camera.grounded = true;
-                if camera.velocity.y < 0.0 {
-                    camera.velocity.y = 0.0;
-                }
-            }
-        }
-    }
-
-    // Jump
-    if keys.just_pressed(KeyCode::Space) && camera.grounded {
-        camera.velocity.y = camera.jump_force;
-        camera.grounded = false;
-    }
-
-    // Apply gravity
-    if !camera.grounded {
-        camera.velocity.y -= camera.gravity * dt;
-        // Terminal velocity
-        camera.velocity.y = camera.velocity.y.max(-50.0);
-    }
-
-    // Move player
-    let movement = camera.velocity * dt;
-    let new_pos = transform.translation + movement;
-
-    // Collision check for walls (horizontal)
-    let head_pos = new_pos;
-    let body_pos = new_pos - Vec3::Y * (camera.player_height * 0.5);
-
-    let can_move_x = !is_solid_at(world, Vec3::new(new_pos.x + camera.player_radius * movement.x.signum(), transform.translation.y, transform.translation.z))
-                  && !is_solid_at(world, Vec3::new(new_pos.x + camera.player_radius * movement.x.signum(), transform.translation.y - camera.player_height * 0.5, transform.translation.z));
-
-    let can_move_z = !is_solid_at(world, Vec3::new(transform.translation.x, transform.translation.y, new_pos.z + camera.player_radius * movement.z.signum()))
-                  && !is_solid_at(world, Vec3::new(transform.translation.x, transform.translation.y - camera.player_height * 0.5, new_pos.z + camera.player_radius * movement.z.signum()));
-
-    if can_move_x {
-        transform.translation.x = new_pos.x;
-    } else {
-        camera.velocity.x = 0.0;
-    }
-
-    if can_move_z {
-        transform.translation.z = new_pos.z;
-    } else {
-        camera.velocity.z = 0.0;
-    }
-
-    // Vertical movement (already handled ground, now check ceiling)
-    if movement.y > 0.0 {
-        let ceiling_check = transform.translation + Vec3::Y * 0.5;
-        if is_solid_at(world, ceiling_check) {
-            camera.velocity.y = 0.0;
-        } else {
-            transform.translation.y += movement.y;
-        }
-    } else {
-        transform.translation.y += movement.y;
-    }
-
-    // Prevent falling through world
-    if transform.translation.y < camera.player_height + 1.0 {
-        transform.translation.y = camera.player_height + 1.0;
-        camera.velocity.y = 0.0;
-        camera.grounded = true;
+    if camera.mode == CameraMode::Walk {
+        camera_transform.translation =
+            player_transform.translation + Vec3::Y * camera_config.movement.eye_height;
     }
 }
 
-fn is_solid_at(world: &VoxelWorld, pos: Vec3) -> bool {
-    let block_pos = IVec3::new(
-        pos.x.floor() as i32,
-        pos.y.floor() as i32,
-        pos.z.floor() as i32,
-    );
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
 
-    if let Some(voxel) = world.get_voxel(block_pos) {
-        voxel.is_solid()
-    } else {
-        false
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// System to apply visual settings to camera color grading and skybox
+pub fn apply_visual_settings(
+    visual_settings: Res<VisualSettings>,
+    mut camera_query: Query<(&mut ColorGrading, &mut Skybox), With<PlayerCamera>>,
+) {
+    if !visual_settings.is_changed() {
+        return;
+    }
+
+    for (mut color_grading, mut skybox) in camera_query.iter_mut() {
+        // Apply color grading settings
+        color_grading.global.exposure = visual_settings.exposure;
+        color_grading.global.temperature = visual_settings.temperature;
+        color_grading.global.post_saturation = visual_settings.saturation;
+        
+        color_grading.midtones.gamma = visual_settings.gamma;
+        color_grading.highlights.gain = visual_settings.highlights_gain;
+        
+        // Apply skybox brightness
+        skybox.brightness = visual_settings.skybox_brightness;
     }
 }

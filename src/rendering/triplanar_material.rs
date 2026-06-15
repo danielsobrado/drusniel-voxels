@@ -1,7 +1,9 @@
 use bevy::{
     prelude::*,
-    render::render_resource::{AsBindGroup, ShaderType},
+    pbr::{MaterialPipeline, MaterialPipelineKey, OpaqueRendererMethod},
+    render::render_resource::{AsBindGroup, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError},
 };
+use bevy_mesh::MeshVertexBufferLayoutRef;
 use bevy_shader::ShaderRef;
 
 /// All triplanar material uniforms in a single struct for proper GPU alignment
@@ -17,16 +19,23 @@ pub struct TriplanarUniforms {
     pub normal_intensity: f32,
     /// Parallax depth scale for displacement
     pub parallax_scale: f32,
+    /// Baked ambient occlusion strength (0.0 = V0.3 look, 1.0 = full AO)
+    pub ao_strength: f32,
+    /// Padding for 16-byte alignment
+    pub _padding: f32,
 }
 
 impl Default for TriplanarUniforms {
     fn default() -> Self {
         Self {
-            base_color: LinearRgba::WHITE,
+            // Warm tint for natural V0.3-like terrain colors (slightly golden/peachy)
+            base_color: LinearRgba::new(1.0, 0.97, 0.92, 1.0),
             tex_scale: 2.0,
             blend_sharpness: 4.0,
             normal_intensity: 1.0,
             parallax_scale: 0.04,
+            ao_strength: 0.0, // Default to V0.3 look (no baked AO)
+            _padding: 0.0,
         }
     }
 }
@@ -84,8 +93,27 @@ impl Material for TriplanarMaterial {
         "shaders/triplanar_terrain.wgsl".into()
     }
 
+    fn prepass_fragment_shader() -> ShaderRef {
+        ShaderRef::Default
+    }
+
     fn alpha_mode(&self) -> AlphaMode {
         AlphaMode::Opaque
+    }
+
+    fn opaque_render_method(&self) -> OpaqueRendererMethod {
+        OpaqueRendererMethod::Forward
+    }
+
+    fn specialize(
+        _pipeline: &MaterialPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &MeshVertexBufferLayoutRef,
+        _key: MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        // Disable backface culling to match v0.3 behavior
+        descriptor.primitive.cull_mode = None;
+        Ok(())
     }
 }
 

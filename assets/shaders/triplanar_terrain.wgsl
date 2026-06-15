@@ -1,15 +1,36 @@
-// Triplanar PBR terrain shader with multi-material support and blending
-// Uses procedural parallax offset derived from normal map strength
+// Triplanar terrain shader - Keep Lean for RTX 40xx
+// Per-category optimization: terrain uses albedo + normal only
+// Roughness is uniform per material (saves 3 texture samples per fragment)
+// SSAO handles ambient occlusion screen-space
+// Target: ~64 chunks, 1.5ms frame budget, 6 samples/fragment
 
 #import bevy_pbr::forward_io::VertexOutput
+#import bevy_pbr::{pbr_fragment, pbr_functions, pbr_types}
 
 struct TriplanarUniforms {
     base_color: vec4<f32>,
     tex_scale: f32,
     blend_sharpness: f32,
     normal_intensity: f32,
-    parallax_scale: f32,
+    parallax_scale: f32, // Only used for rock material
+    ao_strength: f32,    // 0.0 = V0.3 look (no baked AO), 1.0 = full AO
+    _padding: f32,       // Alignment padding
 };
+
+// Uniform roughness values per terrain material (no texture maps needed)
+const GRASS_ROUGHNESS: f32 = 0.85;
+const ROCK_ROUGHNESS: f32 = 0.90;
+const SAND_ROUGHNESS: f32 = 0.98;
+const DIRT_ROUGHNESS: f32 = 0.92;
+
+// Wet sand effect constants
+const WATER_LEVEL: f32 = 18.0;
+const WET_SAND_HEIGHT: f32 = 5.0;  // How far above water level gets wet
+const WET_SAND_DARKEN: f32 = 0.85; // Subtle darkening only - closer to V0.3 look
+const WET_ROUGHNESS: f32 = 0.25;   // Wet surfaces are shinier
+
+const DEBUG_FORCE_ALBEDO: bool = false;
+const DEBUG_ALBEDO_COLOR: vec4<f32> = vec4<f32>(0.0, 1.0, 0.0, 1.0);
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(0) var<uniform> uniforms: TriplanarUniforms;
 
@@ -140,10 +161,11 @@ fn get_base_material(atlas_idx: i32) -> i32 {
 }
 
 @fragment
-fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
-    let world_pos = in.world_position.xyz;
-    let world_normal = normalize(in.world_normal);
-    let view_dir = normalize(-world_pos);
+fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> @location(0) vec4<f32> {
+    var pbr_input = pbr_fragment::pbr_input_from_vertex_output(in, is_front, true);
+    let world_pos = pbr_input.world_position.xyz;
+    let world_normal = normalize(pbr_input.world_normal);
+    let view_dir = pbr_input.V;
     
     // Use vertex colors as material weights
     let mat_weights = in.color; 
@@ -192,12 +214,53 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     albedo = albedo * uniforms.base_color;
     let blended_n = normalize(final_normal);
 
-    // Lighting
-    let light_dir = normalize(vec3(0.4, 0.8, 0.3));
-    let half_dir = normalize(light_dir + view_dir);
-    let ndotl = max(dot(blended_n, light_dir), 0.0);
-    let ndoth = max(dot(blended_n, half_dir), 0.0);
-    
-    let lit = albedo.rgb * (0.35 + ndotl * 0.65) + vec3(pow(ndoth, 32.0) * 0.15);
-    return vec4(lit, albedo.a);
+    // Baked vertex AO - controlled by ao_strength uniform
+    // 0.0 = V0.3 look (soft shadows via SSAO only)
+    // 1.0 = full baked AO (darker shadows in crevices)
+    let vertex_ao = in.color.r; // AO baked into vertex red channel
+    let ao_factor = mix(1.0, vertex_ao, uniforms.ao_strength);
+
+    // Calculate uniform roughness based on material blend
+    var roughness = w.x * GRASS_ROUGHNESS +
+                    w.y * ROCK_ROUGHNESS +
+                    w.z * SAND_ROUGHNESS +
+                    w.w * DIRT_ROUGHNESS;
+
+    // Wet sand effect: darken and smooth terrain near water level
+    let height_above_water = world_pos.y - WATER_LEVEL;
+    // Smooth gradient from water level up to WET_SAND_HEIGHT
+    let wet_factor = clamp(1.0 - (height_above_water / WET_SAND_HEIGHT), 0.0, 1.0);
+    // Apply to all terrain near water (sand, dirt, grass at shoreline)
+    let wet_strength = wet_factor * wet_factor; // Quadratic falloff for natural look
+
+    // Darken the albedo for wet terrain
+    let wet_albedo = albedo * vec4<f32>(WET_SAND_DARKEN, WET_SAND_DARKEN, WET_SAND_DARKEN, 1.0);
+    var final_albedo = mix(albedo, wet_albedo, wet_strength);
+
+    // Reduce roughness for wet surfaces (wet = shinier)
+    roughness = mix(roughness, WET_ROUGHNESS, wet_strength);
+
+    pbr_input.material.base_color = final_albedo;
+    pbr_input.material.perceptual_roughness = clamp(roughness, 0.04, 1.0);
+    pbr_input.material.metallic = 0.0;
+    pbr_input.N = blended_n;
+    pbr_input.diffuse_occlusion = vec3<f32>(ao_factor);
+    pbr_input.specular_occlusion = ao_factor;
+    pbr_input.material.flags |= pbr_types::STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT;
+    pbr_input.material.flags |= pbr_types::STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT;
+
+    if (DEBUG_FORCE_ALBEDO) {
+        pbr_input.material.base_color = DEBUG_ALBEDO_COLOR;
+        pbr_input.material.flags |= pbr_types::STANDARD_MATERIAL_FLAGS_UNLIT_BIT;
+    }
+
+    var color: vec4<f32>;
+    if ((pbr_input.material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_UNLIT_BIT) == 0u) {
+        color = pbr_functions::apply_pbr_lighting(pbr_input);
+    } else {
+        color = pbr_input.material.base_color;
+    }
+
+    color = pbr_functions::main_pass_post_lighting_processing(pbr_input, color);
+    return color;
 }

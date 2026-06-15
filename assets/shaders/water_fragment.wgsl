@@ -25,6 +25,12 @@
 #import bevy_water::water_bindings
 #import bevy_water::water_functions as water_fn
 
+// Shore foam constants
+const FOAM_COLOR: vec3<f32> = vec3<f32>(0.9, 0.95, 1.0);   // White with slight blue tint
+const FOAM_EDGE_START: f32 = 0.0;   // Start foam at water edge
+const FOAM_EDGE_END: f32 = 2.0;     // Foam fades out at this depth
+const FOAM_STRENGTH: f32 = 0.8;     // Maximum foam intensity
+
 @fragment
 fn fragment(
 #ifdef MESHLET_MESH_MATERIAL_PASS
@@ -66,26 +72,45 @@ fn fragment(
   var pbr_input = pbr_input_from_standard_material(in, is_front);
 
   let deep_color = water_bindings::material.deep_color;
+  let shallow_color = water_bindings::material.shallow_color;
   var water_color = deep_color;
 #ifdef DEPTH_PREPASS
 #ifndef PREPASS_PIPELINE
 #ifndef WEBGL2
   let water_clarity = water_bindings::material.clarity;
-  let shallow_color = water_bindings::material.shallow_color;
   let edge_scale = water_bindings::material.edge_scale;
   let edge_color = water_bindings::material.edge_color;
 
   let z_depth_buffer_ndc = bevy_pbr::prepass_utils::prepass_depth(in.position, 0u);
   let z_depth_buffer_view = depth_ndc_to_view_z(z_depth_buffer_ndc);
   let z_fragment_view = depth_ndc_to_view_z(in.position.z);
-  let depth_diff_view = z_fragment_view - z_depth_buffer_view;
-  let beers_law = exp(-depth_diff_view * water_clarity);
+  let raw_depth_diff = z_fragment_view - z_depth_buffer_view;
+  // Detect voxel water early for depth adjustment
+  let is_voxel_water = water_bindings::material.coord_scale.x < 8.0;
+  // For voxel water, enforce minimum depth to prevent striping in shallow areas
+  let min_depth = select(0.0, 0.3, is_voxel_water);
+  let depth_diff_view = max(raw_depth_diff, min_depth);
+  let beers_law = clamp(exp(-depth_diff_view * water_clarity), 0.0, 1.0);
   let depth_color = vec4<f32>(mix(deep_color.xyz, shallow_color.xyz, beers_law), 1.0 - beers_law);
   water_color = mix(edge_color, depth_color, smoothstep(0.0, edge_scale, depth_diff_view));
+
+  // Shore foam effect: add foam at shallow water edges
+  let foam_factor = (1.0 - smoothstep(FOAM_EDGE_START, FOAM_EDGE_END, depth_diff_view)) * FOAM_STRENGTH;
+  water_color = vec4<f32>(mix(water_color.rgb, FOAM_COLOR, foam_factor), water_color.a);
 #endif
 #endif
 #endif
-  pbr_input.material.base_color *= water_color;
+  // Voxel water uses a much smaller coord scale; keep it visibly blue up close.
+  let voxel_water = water_bindings::material.coord_scale.x < 8.0;
+  if (voxel_water) {
+    // Light blend toward shallow_color - let wave lighting variations show through
+    water_color = vec4<f32>(mix(water_color.rgb, shallow_color.rgb, 0.3), 1.0);
+    // Higher minimum alpha ensures water is always visible even in shallow areas
+    let base_alpha = max(pbr_input.material.base_color.a, 0.95);
+    pbr_input.material.base_color = vec4<f32>(water_color.rgb, base_alpha);
+  } else {
+    pbr_input.material.base_color *= water_color;
+  }
 
   //let foam_color = water_bindings::material.edge_color;
   //let foam = mix(foam_color, depth_color, smoothstep(0.0, edge_scale, depth_diff_view));

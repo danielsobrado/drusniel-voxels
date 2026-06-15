@@ -1,16 +1,42 @@
-// Grass wind shader - Valheim-style swaying animation
+// Grass wind shader - Valheim-style swaying animation with SSS and contact shadows
 // Uses Bevy 0.17 Material system with mesh_functions import
+// Enhanced with Enshrouded-style contact shadows for micro-detail
 // Pattern based on assets/shaders/custom_vertex_attribute.wgsl from Bevy examples
 
+#import bevy_pbr::mesh_view_bindings::view
 #import bevy_pbr::mesh_functions::{get_world_from_local, mesh_position_local_to_clip}
+// Inlined from sss_vegetation to avoid import issues
+fn simple_wrap_lighting(normal: vec3<f32>, light_dir: vec3<f32>, wrap: f32) -> f32 {
+    let n_dot_l = dot(normal, light_dir);
+    return saturate((n_dot_l + wrap) / (1.0 + wrap));
+}
+// Removed unused import to fix crash
+
+// Baseline exposure used by Bevy when no explicit camera exposure is set (EV100_BLENDER = 9.7).
+const EXPOSURE_BLENDER: f32 = 0.0010019079;
 
 struct GrassMaterial {
     base_color: vec4<f32>,
     tip_color: vec4<f32>,
+    fog_color: vec4<f32>,
+    sun_direction: vec4<f32>,
+    
     wind_strength: f32,
     wind_speed: f32,
     wind_scale: f32,
     time: f32,
+    fog_start: f32,
+    fog_end: f32,
+    aerial_strength: f32,
+    sss_wrap: f32,
+    sss_strength: f32,
+    contact_shadow_strength: f32,
+    grass_density: f32,
+    shadow_length: f32,
+    near_fade_start: f32,
+    near_fade_end: f32,
+    near_fade_min_alpha: f32,
+    _padding: vec4<f32>,
 };
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(0) var<uniform> material: GrassMaterial;
@@ -49,6 +75,11 @@ fn fbm(p: vec2<f32>) -> f32 {
     return value;
 }
 
+fn interleaved_gradient_noise(pixel: vec2<f32>) -> f32 {
+    let magic = vec3<f32>(0.06711056, 0.00583715, 52.9829189);
+    return fract(magic.z * fract(dot(pixel, magic.xy)));
+}
+
 struct Vertex {
     @builtin(instance_index) instance_index: u32,
     @location(0) position: vec3<f32>,
@@ -60,6 +91,10 @@ struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(1) color: vec4<f32>,
+    @location(2) world_position: vec3<f32>,
+    @location(3) world_normal: vec3<f32>,
+    @location(4) height_factor: f32,      // 0 at base, 1 at tip
+    @location(5) wind_bend: f32,          // Wind displacement amount
 };
 
 @vertex
@@ -68,7 +103,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
     // Get transform for this instance
     let model = get_world_from_local(vertex.instance_index);
-    
+
     // Calculate world position for wind sampling
     var local_pos = vec4<f32>(vertex.position, 1.0);
     let world_pos = model * local_pos;
@@ -77,30 +112,167 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     let height_factor = 1.0 - vertex.uv.y;
     let height_factor_smooth = height_factor * height_factor;
 
-    // Sample wind using world position
-    let wind_sample_pos = world_pos.xz * material.wind_scale + material.time * material.wind_speed;
+    // Per-instance phase offset based on world position for desynchronized movement
+    let phase_offset = hash(world_pos.xz * 7.3) * 6.28;
+    let time_with_phase = material.time + phase_offset;
+
+    // Primary wind - local turbulence
+    let wind_sample_pos = world_pos.xz * material.wind_scale + time_with_phase * material.wind_speed;
     let wind_offset = fbm(wind_sample_pos) * 2.0 - 1.0;
 
-    // Apply wind displacement
-    local_pos.x += wind_offset * material.wind_strength * height_factor_smooth;
-    local_pos.z += wind_offset * material.wind_strength * height_factor_smooth * 0.5;
+    // Secondary gust - slower, larger scale, directional
+    let gust_pos = world_pos.xz * 0.015 + material.time * 0.4;
+    let gust = noise(gust_pos) * 2.0 - 1.0;
+    let gust_direction = vec2<f32>(0.7, 0.4); // Dominant wind direction
+
+    // Combined displacement
+    let wind_x = wind_offset * material.wind_strength + gust * gust_direction.x * 0.3;
+    let wind_z = wind_offset * material.wind_strength * 0.6 + gust * gust_direction.y * 0.3;
+    
+    // Total wind bend amount for self-shadowing
+    let wind_bend = abs(wind_x) + abs(wind_z);
+
+    // Apply wind displacement with height weighting
+    local_pos.x += wind_x * height_factor_smooth;
+    local_pos.z += wind_z * height_factor_smooth;
+    // Subtle Y compression when bent (grass bends, doesn't stretch)
+    local_pos.y -= abs(wind_x + wind_z) * 0.1 * height_factor_smooth;
 
     // Transform to clip space
     out.clip_position = mesh_position_local_to_clip(model, local_pos);
     out.uv = vertex.uv;
+    // Pass final world position for fog calculations
+    out.world_position = (model * local_pos).xyz;
+    // Transform normal to world space for SSS lighting
+    out.world_normal = normalize((model * vec4<f32>(vertex.normal, 0.0)).xyz);
     
-    // Gradient color from base to tip
-    out.color = mix(material.tip_color, material.base_color, vertex.uv.y);
+    // Pass through for fragment shader contact shadows
+    out.height_factor = height_factor;
+    out.wind_bend = wind_bend;
+
+    // Gradient color from base to tip (bias toward tip to reduce base banding)
+    let base_weight = pow(clamp(vertex.uv.y, 0.0, 1.0), 1.6);
+    out.color = mix(material.tip_color, material.base_color, base_weight);
 
     return out;
 }
 
 struct FragmentInput {
     @location(0) uv: vec2<f32>,
+    @location(3) world_normal: vec3<f32>,
     @location(1) color: vec4<f32>,
+    @location(2) world_position: vec3<f32>,
+    @location(4) height_factor: f32,
+    @location(5) wind_bend: f32,
 };
 
+// Compute procedural grass blade alpha mask
+// UV.y: 0 at tip, 1 at base
+// UV.x: 0 to 1 across width
+fn blade_alpha(uv: vec2<f32>) -> f32 {
+    // Height from base (0 at base, 1 at tip)
+    let height = 1.0 - uv.y;
+
+    // Blade width narrows toward tip
+    let blade_width = mix(0.5, 0.15, height * height);
+
+    // Distance from center
+    let center_dist = abs(uv.x - 0.5);
+
+    // Soft edge falloff
+    let edge = smoothstep(blade_width, blade_width * 0.6, center_dist);
+
+    // Taper at very tip
+    let tip_taper = smoothstep(0.0, 0.1, 1.0 - height);
+
+    return edge * tip_taper;
+}
+
+// Grass self-shadowing based on height and wind
+fn compute_grass_self_shadow(
+    height_factor: f32,
+    wind_bend: f32,
+    sun_direction: vec3<f32>,
+) -> f32 {
+    // Lower parts receive self-shadow from upper parts
+    let base_shadow = pow(1.0 - height_factor, 2.0) * 0.3;
+    
+    // Wind bending can expose or hide parts
+    let bend_shadow = wind_bend * (1.0 - height_factor) * 0.2;
+    
+    // Sun angle affects self-shadowing
+    let sun_factor = max(sun_direction.y, 0.0);
+    let sun_shadow = (1.0 - sun_factor) * 0.2;
+    
+    return 1.0 - saturate(base_shadow + bend_shadow + sun_shadow);
+}
+
+// Ambient occlusion for grass fields
+fn compute_grass_ao(
+    height_factor: f32,
+    density: f32,
+) -> f32 {
+    // Strong AO at grass base, fading to tip
+    let height_ao = pow(1.0 - height_factor, 3.0);
+    
+    // Denser grass = more occlusion
+    let density_ao = density * 0.5;
+    
+    return 1.0 - saturate(height_ao * (0.5 + density_ao));
+}
+
 @fragment
-fn fragment(input: FragmentInput) -> @location(0) vec4<f32> {
-    return input.color;
+fn fragment(input: FragmentInput, @builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f32> {
+    let alpha = blade_alpha(input.uv);
+    
+    // Get sun direction from material uniform
+    let sun_dir = normalize(material.sun_direction.xyz);
+    
+    // Apply SSS wrap lighting
+    let sss_lighting = simple_wrap_lighting(input.world_normal, sun_dir, material.sss_wrap);
+    let sss_boost = mix(1.0, 1.0 + material.sss_strength, sss_lighting);
+    
+    // SSS color tint (yellow-green for vegetation)
+    let sss_color = vec3<f32>(1.1, 1.0, 0.7);
+    let lit_color = input.color.rgb * sss_boost * sss_color;
+    
+    // === Contact Shadows ===
+    // Self-shadowing from grass blade bending and stacking
+    let self_shadow = compute_grass_self_shadow(
+        input.height_factor,
+        input.wind_bend,
+        sun_dir,
+    );
+    
+    // Ambient occlusion at grass base
+    let ao = compute_grass_ao(input.height_factor, material.grass_density);
+    
+    // Combined shadow factor
+    let shadow = mix(1.0, self_shadow * ao, material.contact_shadow_strength);
+    
+    // Apply shadows to lit color
+    let shadowed_color = lit_color * shadow;
+
+    let distance = length(view.world_position - input.world_position);
+    var near_fade = 1.0;
+    if material.near_fade_end > material.near_fade_start + 0.001 {
+        near_fade = smoothstep(material.near_fade_start, material.near_fade_end, distance);
+    }
+    let min_alpha = clamp(material.near_fade_min_alpha, 0.0, 1.0);
+    let fade_alpha = mix(min_alpha, 1.0, near_fade);
+    let final_alpha = alpha * fade_alpha;
+
+    if fade_alpha < 0.999 {
+        let dither = interleaved_gradient_noise(frag_coord.xy);
+        if final_alpha < dither {
+            discard;
+        }
+    }
+
+    // Aerial perspective - blend toward fog color based on distance
+    let fog_range = max(material.fog_end - material.fog_start, 1.0);
+    let fog_factor = clamp((distance - material.fog_start) / fog_range, 0.0, 1.0) * material.aerial_strength;
+    let final_color = mix(shadowed_color, material.fog_color.rgb, fog_factor);
+
+    return vec4<f32>(final_color, final_alpha);
 }

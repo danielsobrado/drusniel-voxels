@@ -1,0 +1,121 @@
+# Fog configuration for Valheim-style atmosphere
+fog:
+  # Distance fog (screen-space, hides chunk boundaries)
+  distance:
+    enabled: true
+    # Linear or atmospheric (visibility-based) falloff.
+    falloff: atmospheric
+    # Start fading at this distance (used for linear + shadow cutoff alignment)
+    start: 80.0
+    # Fog visibility distance (set >= cull distance to hide loading)
+    end: 220.0
+    # Keep a fraction of the range clear before fog starts (0 = immediate).
+    near_fade: 0.35
+
+  # Volumetric fog (god rays, local volumes)
+  # WARNING: Very expensive! Drops FPS from 40-50 to ~10 FPS.
+  # Only enable on high-end GPUs.
+  volumetric:
+    enabled: true
+    # Raymarching quality (16=minimum, 32=fast, 64=quality)
+    step_count: 32
+    # Jitter for TAA integration
+    jitter: 0.5
+    # Ambient intensity (0 if using environment maps)
+    ambient_intensity: 0.0
+
+  # Global fog volume parameters
+  volume:
+    # Size in world units (cover area around camera)
+    size: 256.0
+    # Base density - EXTREMELY LOW to eliminate outdoor whiteout
+    density: 0.00001
+    # Light absorption - very low to avoid darkening
+    absorption: 0.001
+    # Light scattering - Lowered to prevent milky look
+    scattering: 0.2
+    # Scattering asymmetry (Bevy default is 0.5)
+    scattering_asymmetry: 0.6
+    # Dust animation for god ray movement
+    dust_animation:
+      enabled: true
+      speed: 0.3
+      scale: 8.0
+      intensity: 0.6
+      wind_direction: [0.7, 0.3]
+
+  # Active preset (clear, balanced, misty, god_rays)
+  current_preset: god_rays
+
+  # Preset configurations
+  presets:
+    clear:
+      size: 512.0
+      density: 0.0005
+      absorption: 0.1
+      scattering: 0.1
+      scattering_asymmetry: 0.6
+      dust_animation:
+        enabled: false
+        speed: 0.3
+        scale: 8.0
+        intensity: 0.6
+        wind_direction: [0.7, 0.3]
+    balanced:
+      size: 512.0
+      density: 0.04
+      absorption: 0.08
+      scattering: 0.25
+      scattering_asymmetry: 0.7
+      dust_animation:
+        enabled: true
+        speed: 0.2
+        scale: 10.0
+        intensity: 0.4
+        wind_direction: [0.7, 0.3]
+    misty:
+      size: 512.0
+      density: 0.15
+      absorption: 0.05
+      scattering: 0.8
+      scattering_asymmetry: 0.8
+      dust_animation:
+        enabled: true
+        speed: 0.15
+        scale: 16.0
+        intensity: 0.5
+        wind_direction: [0.5, 0.5]
+    god_rays:
+      size: 512.0
+      density: 0.0001        # Very low base fog
+      absorption: 0.15       # HIGHER absorption = rays fade out, don't wash everything
+      scattering: 0.25       # Moderate scattering - rays visible but focused
+      scattering_asymmetry: 0.85 # High forward scattering - rays visible toward sun
+      dust_animation:
+        enabled: true
+        speed: 0.4           # Noticeable dust movement
+        scale: 6.0           # Larger patterns for visible dust
+        intensity: 0.8       # High contrast
+        wind_direction: [0.7, 0.3]
+      # Volumetric overrides for god rays preset
+      step_count_override: 64       # Higher steps for sharp canopy shafts
+      ambient_intensity_override: 0.0  # Zero ambient = maximum ray contrast
+      light_intensity: 1.0          # Normal intensity
+
+  # Day/night color presets
+  colors:
+    day:
+      fog: [0.70, 0.78, 0.88, 1.0]      # Light blue-white haze
+      extinction: [0.40, 0.55, 0.70]    # What light gets absorbed
+      inscattering: [0.95, 0.95, 1.00]  # Light scattered into view
+      directional: [1.0, 0.98, 0.95]    # Neutral white sun glow
+    twilight:
+      fog: [0.65, 0.45, 0.40, 1.0]      # Warm orange haze
+      extinction: [0.50, 0.35, 0.30]
+      inscattering: [1.0, 0.70, 0.50]
+      directional: [1.0, 0.60, 0.30]
+    night:
+      fog: [0.08, 0.10, 0.15, 1.0]      # Dark blue
+      extinction: [0.05, 0.08, 0.12]
+      inscattering: [0.10, 0.15, 0.25]
+      directional: [0.6, 0.7, 0.9]      # Moonlight blue

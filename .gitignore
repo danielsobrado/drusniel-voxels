@@ -1,4 +1,5 @@
 /target
+/temp
 .history/src/voxel/*
 log.txt
 log.err
@@ -11,4 +12,27 @@ tools/*.html
 assets/*.html
 
 # World save file
-world_data.bin
+*.bin
+*.local.json
+*.png
+*.fbx
+*.gltf
+assets/models/_downloads/*.zip
+assets/models/KayKit_Forest_Nature_Pack_1.0_FREE/Assets/obj/*
+assets/models/Models/DAE format/*
+assets/models/Models/GLTF format/*
+assets/models/Models/OBJ format/*
+assets/models/Models/STL format/*
+assets/models/OBJ/*
+assets/models/props/resources/kaykit/*
+assets/models/*.jpg
+assets/models/License.txt
+assets/models/Kenney.url
+assets/models/KayKit_Forest_Nature_Pack_1.0_FREE/*
+
+*.log
+v0.3_grass_material.rs
+v0.3_vegetation_mod.rs
+*.txt
+assets/models/plants/custom/*.glb
+saves/
