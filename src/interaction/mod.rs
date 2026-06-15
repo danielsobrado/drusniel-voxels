@@ -216,9 +216,20 @@ pub fn debug_voxel_info_system(
     targeted: Res<TargetedBlock>,
     world: Res<VoxelWorld>,
     camera_query: Query<&Transform, With<crate::camera::controller::PlayerCamera>>,
+    sun_query: Query<(&Transform, &DirectionalLight), With<crate::environment::Sun>>,
+    ambient: Res<AmbientLight>,
 ) {
     if keyboard.just_pressed(KeyCode::KeyD) {
         info!("=== DEBUG VOXEL INFO ===");
+
+        // Sun/Light info
+        if let Ok((sun_transform, sun_light)) = sun_query.single() {
+            let sun_dir = sun_transform.forward().as_vec3();
+            info!("Sun direction: ({:.2}, {:.2}, {:.2})", sun_dir.x, sun_dir.y, sun_dir.z);
+            info!("Sun illuminance: {:.0}", sun_light.illuminance);
+            info!("Sun shadows enabled: {}", sun_light.shadows_enabled);
+        }
+        info!("Ambient brightness: {:.0}", ambient.brightness);
 
         // Camera position
         if let Ok(camera) = camera_query.single() {
@@ -274,6 +285,22 @@ pub fn debug_voxel_info_system(
                     }
                 }
             }
+
+            // Check skylight - count solid blocks above
+            info!("  Skylight check (blocks above):");
+            let mut solid_above = 0;
+            for y_offset in 1..=20 {
+                let check_pos = pos + IVec3::new(0, y_offset, 0);
+                if let Some(voxel) = world.get_voxel(check_pos) {
+                    if voxel.is_solid() {
+                        solid_above += 1;
+                        info!("    y+{}: {:?} (SOLID)", y_offset, voxel);
+                    }
+                } else {
+                    break; // Outside world
+                }
+            }
+            info!("    Total solid blocks above (20 checked): {}", solid_above);
 
             // Check if chunk exists
             if world.get_chunk(chunk_pos).is_some() {

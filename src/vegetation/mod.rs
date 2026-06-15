@@ -2,12 +2,22 @@ pub mod grass_material;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
-use bevy_mesh::{Indices, PrimitiveTopology};
+use bevy::light::NotShadowCaster;
+use bevy_mesh::{Indices, PrimitiveTopology, VertexAttributeValues};
+use crate::constants::CHUNK_SIZE;
 use crate::voxel::world::VoxelWorld;
 use crate::voxel::types::{VoxelType, Voxel};
+use crate::voxel::meshing::ChunkMesh;
+use crate::rendering::materials::WaterMaterial;
 use crate::camera::controller::PlayerCamera;
 
 pub use grass_material::{GrassMaterial, GrassMaterialPlugin, GrassMaterialHandles};
+
+/// Minimal info for a single grass blade instance
+struct GrassInstance {
+    position: Vec3,
+    normal: Vec3,
+}
 
 /// Component for grass blade instances
 #[derive(Component)]
@@ -28,6 +38,321 @@ pub struct RocksSpawned(pub bool);
 /// Resource to track if particles have been spawned
 #[derive(Resource, Default)]
 pub struct ParticlesSpawned(pub bool);
+
+/// Marker that a voxel chunk mesh already has a procedural grass instance attached
+#[derive(Component)]
+pub struct ChunkGrassAttached;
+
+/// Cached grass assets for the procedural patches
+#[derive(Resource, Default)]
+pub struct GrassPatchAssets {
+    pub blade_mesh: Handle<Mesh>,
+    pub materials: Vec<Handle<GrassMaterial>>,
+}
+
+/// Build shared grass blade mesh and materials that all patches reuse
+pub fn setup_grass_patch_assets(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut grass_materials: ResMut<Assets<GrassMaterial>>,
+    mut material_handles: ResMut<GrassMaterialHandles>,
+) {
+    let blade = meshes.add(create_grass_blade_mesh());
+    info!("Created grass blade template mesh");
+
+    // Create grass materials with different color variations (kept vivid to ensure visibility)
+    let grass_material_configs = vec![
+        GrassMaterial::new(
+            LinearRgba::new(0.16, 0.28, 0.05, 1.0), // Deep green base
+            LinearRgba::new(0.60, 0.85, 0.35, 1.0), // Bright green tip
+            0.35, 1.8, 0.08,
+        ),
+        GrassMaterial::new(
+            LinearRgba::new(0.18, 0.32, 0.07, 1.0),
+            LinearRgba::new(0.70, 0.90, 0.38, 1.0),
+            0.30, 1.5, 0.10,
+        ),
+        GrassMaterial::new(
+            LinearRgba::new(0.12, 0.26, 0.06, 1.0),
+            LinearRgba::new(0.55, 0.78, 0.32, 1.0),
+            0.40, 2.0, 0.07,
+        ),
+    ];
+
+    let material_handles_vec: Vec<Handle<GrassMaterial>> = grass_material_configs
+        .into_iter()
+        .map(|mat| grass_materials.add(mat))
+        .collect();
+
+    material_handles.handles = material_handles_vec.clone();
+    info!("Created {} grass material variations", material_handles_vec.len());
+
+    commands.insert_resource(GrassPatchAssets {
+        blade_mesh: blade,
+        materials: material_handles_vec,
+    });
+    info!("GrassPatchAssets resource initialized");
+}
+
+/// Spawn a procedural grass patch for each solid voxel chunk mesh
+pub fn attach_procedural_grass_to_chunks(
+    mut commands: Commands,
+    assets: Res<GrassPatchAssets>,
+    water_material: Res<WaterMaterial>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    chunk_query: Query<(
+        Entity,
+        &ChunkMesh,
+        &Mesh3d,
+        &MeshMaterial3d<StandardMaterial>,
+        &Transform,
+    ), Without<ChunkGrassAttached>>,
+) {
+    for (entity, chunk, chunk_mesh, material, transform) in chunk_query.iter() {
+        // Skip water surfaces
+        if material.0 == water_material.handle {
+            continue;
+        }
+
+        let Some(chunk_source_mesh) = meshes.get(&chunk_mesh.0) else {
+            continue;
+        };
+
+        // Density: blades per square unit; max_count: limit per chunk
+        let instances = collect_grass_instances(chunk_source_mesh, transform, 20, 2000);
+        if instances.is_empty() {
+            continue;
+        }
+
+        let template_mesh = match meshes.get(&assets.blade_mesh) {
+            Some(mesh) => mesh,
+            None => continue,
+        };
+
+        let Some(grass_mesh) = build_grass_patch_mesh(template_mesh, &instances) else {
+            continue;
+        };
+
+        let mesh_handle = meshes.add(grass_mesh);
+
+        let chunk_origin = transform.translation;
+        let center = chunk_origin + Vec3::splat(CHUNK_SIZE as f32 * 0.5);
+
+        // Pick a material handle based on chunk position for deterministic variation
+        let material_idx = ((chunk.chunk_position.x.abs() + chunk.chunk_position.z.abs()) as usize)
+            % assets.materials.len();
+        let material_handle = assets.materials[material_idx].clone();
+
+        commands.entity(entity).insert(ChunkGrassAttached);
+
+        commands.spawn((
+            Mesh3d(mesh_handle),
+            MeshMaterial3d(material_handle),
+            Transform::IDENTITY,
+            GlobalTransform::IDENTITY,
+            Visibility::Visible,
+            InheritedVisibility::VISIBLE,
+            ViewVisibility::default(),
+        ));
+    }
+}
+
+/// Extract grass instances from a mesh by sampling upward-facing triangles
+fn collect_grass_instances(
+    mesh: &Mesh,
+    transform: &Transform,
+    density: u32,
+    max_count: usize,
+) -> Vec<GrassInstance> {
+    let positions = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+        Some(VertexAttributeValues::Float32x3(values)) => values,
+        _ => {
+            warn!("Mesh has no POSITION attribute");
+            return Vec::new();
+        }
+    };
+
+    let normals = match mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
+        Some(VertexAttributeValues::Float32x3(values)) => values,
+        _ => {
+            warn!("Mesh has no NORMAL attribute");
+            return Vec::new();
+        }
+    };
+
+    let indices: Vec<u32> = match mesh.indices() {
+        Some(Indices::U32(idx)) => idx.clone(),
+        Some(Indices::U16(idx)) => idx.iter().map(|i| *i as u32).collect(),
+        _ => {
+            warn!("Mesh has no indices");
+            return Vec::new();
+        }
+    };
+
+    let mut instances = Vec::new();
+    let mut rejected_area = 0;
+    let mut rejected_normal = 0;
+    let mut accepted = 0;
+
+    // Per-chunk salt so adjacent chunks don't align
+    let chunk_seed = {
+        let cx = transform.translation.x.floor() as i32;
+        let cz = transform.translation.z.floor() as i32;
+        mix_bits32(cx as u32 ^ (cz as u32).wrapping_mul(0x9e37_79b9) ^ 0x85eb_ca6b) as i32
+    };
+
+    for (tri_idx, tri) in indices.chunks(3).enumerate() {
+        if tri.len() < 3 {
+            continue;
+        }
+
+        let v0 = transform.transform_point(Vec3::from(positions[tri[0] as usize]));
+        let v1 = transform.transform_point(Vec3::from(positions[tri[1] as usize]));
+        let v2 = transform.transform_point(Vec3::from(positions[tri[2] as usize]));
+
+        // Use the stored normal from the first vertex of the triangle (all 3 should be the same for flat faces)
+        let normal_local = Vec3::from(normals[tri[0] as usize]);
+        let normal_world = transform.rotation * normal_local; // Transform rotation only, not translation
+
+        let normal = (v1 - v0).cross(v2 - v0);
+        let area = normal.length() * 0.5;
+        if area <= 0.0001 {
+            rejected_area += 1;
+            continue;
+        }
+
+        let normal_dir = normal_world.normalize();
+        
+        if normal_dir.y <= 0.25 {
+            rejected_normal += 1;
+            continue;
+        }
+        
+        accepted += 1;
+
+        let blade_count = (density as f32 * area).ceil() as u32;
+
+        // Use centroid with high precision to create unique seeds per triangle
+        // Quantize to high-resolution world space and mix triangle + chunk seed to avoid aligned repeats.
+        let centroid = (v0 + v1 + v2) / 3.0;
+        let qx = (centroid.x * 4096.0).round() as i32;
+        let qy = (centroid.y * 4096.0).round() as i32;
+        let qz = (centroid.z * 4096.0).round() as i32;
+
+        // Strongly mix hashed components to decorrelate adjacent triangles
+        let mut seed_base_bits = (qx as u32).rotate_left(3)
+            ^ (qz as u32).rotate_left(17)
+            ^ (qy as u32).rotate_left(29)
+            ^ (tri_idx as u32).wrapping_mul(0x9e37_79b9)
+            ^ chunk_seed as u32;
+        seed_base_bits = mix_bits32(seed_base_bits);
+        let seed_base = seed_base_bits as i32;
+
+        for i in 0..blade_count {
+            // Two independent hashes for barycentric sampling (u1/u2)
+            let h1 = mix_bits32(seed_base_bits ^ (i as u32).wrapping_mul(0x85eb_ca6b));
+            let h2 = mix_bits32(seed_base_bits ^ (i as u32).wrapping_mul(0xc2b2_ae35) ^ 0x27d4_eb2d);
+            let u1 = (h1 as f32) / (u32::MAX as f32);
+            let u2 = (h2 as f32) / (u32::MAX as f32);
+            let r1 = u1.sqrt(); // area-corrected radial factor
+            let r2 = u2;        // angle factor
+
+            let bary = Vec3::new(1.0 - r1, r1 * (1.0 - r2), r1 * r2);
+            let position = v0 * bary.x + v1 * bary.y + v2 * bary.z;
+
+            instances.push(GrassInstance { position, normal: normal_dir });
+            if instances.len() >= max_count {
+                return instances;
+            }
+        }
+    }
+
+    instances
+}
+
+/// Build a combined grass mesh for all instances using the blade template
+fn build_grass_patch_mesh(template: &Mesh, instances: &[GrassInstance]) -> Option<Mesh> {
+    if instances.is_empty() {
+        return None;
+    }
+
+    let positions = match template.attribute(Mesh::ATTRIBUTE_POSITION) {
+        Some(VertexAttributeValues::Float32x3(values)) => values,
+        _ => return None,
+    };
+    let normals = match template.attribute(Mesh::ATTRIBUTE_NORMAL) {
+        Some(VertexAttributeValues::Float32x3(values)) => Some(values.clone()),
+        _ => None,
+    };
+    let uvs = match template.attribute(Mesh::ATTRIBUTE_UV_0) {
+        Some(VertexAttributeValues::Float32x2(values)) => Some(values.clone()),
+        _ => None,
+    };
+    let indices: Vec<u32> = match template.indices() {
+        Some(Indices::U32(idx)) => idx.clone(),
+        Some(Indices::U16(idx)) => idx.iter().map(|i| *i as u32).collect(),
+        _ => return None,
+    };
+
+    let base_len = positions.len() as u32;
+    let mut out_positions = Vec::with_capacity(positions.len() * instances.len());
+    let mut out_normals = Vec::with_capacity(normals.as_ref().map(|n| n.len()).unwrap_or(0) * instances.len());
+    let mut out_uvs: Vec<[f32; 2]> = Vec::with_capacity(uvs.as_ref().map(|u| u.len()).unwrap_or(0) * instances.len());
+    let mut out_indices = Vec::with_capacity(indices.len() * instances.len());
+
+    for (i, instance) in instances.iter().enumerate() {
+        let hash = simple_hash(
+            (instance.position.x as i32).wrapping_add(i as i32 * 13),
+            (instance.position.z as i32).wrapping_sub(i as i32 * 7),
+        );
+        let yaw = hash * std::f32::consts::TAU;
+        let scale = 0.8 + simple_hash(i as i32 * 17, i as i32 * 29) * 0.6;
+
+        let align = Quat::from_rotation_arc(Vec3::Y, instance.normal);
+        let rotation = align * Quat::from_rotation_y(yaw);
+        // Lift slightly along the normal to avoid z-fighting with the ground
+        let base_pos = instance.position + instance.normal * 0.05;
+        let transform = Mat4::from_scale_rotation_translation(Vec3::splat(scale), rotation, base_pos);
+        let normal_matrix = Mat3::from_quat(rotation);
+
+        let index_offset = (i as u32) * base_len;
+
+        for idx in &indices {
+            out_indices.push(idx + index_offset);
+        }
+
+        for pos in positions {
+            let world_pos = transform.transform_point3(Vec3::from(*pos));
+            out_positions.push(world_pos.to_array());
+        }
+
+        if let Some(src_normals) = &normals {
+            for n in src_normals {
+                let world_normal = normal_matrix * Vec3::from(*n);
+                out_normals.push(world_normal.to_array());
+            }
+        }
+
+        if let Some(src_uvs) = &uvs {
+            out_uvs.extend(src_uvs.iter());
+        }
+    }
+
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, out_positions);
+
+    if !out_normals.is_empty() {
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, out_normals);
+    }
+
+    if !out_uvs.is_empty() {
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, out_uvs);
+    }
+
+    mesh.insert_indices(Indices::U32(out_indices));
+
+    Some(mesh)
+}
 
 /// Component for floating particles (pollen, dust, etc)
 #[derive(Component)]
@@ -57,10 +382,6 @@ pub fn spawn_grass_blades(
     }
 
     spawned.0 = true;
-
-    // TEMPORARY: Skip grass spawning to debug blue shapes
-    info!("Grass spawning disabled for debugging");
-    return;
 
     // Create grass blade mesh (thin vertical quad)
     let grass_mesh = meshes.add(create_grass_blade_mesh());
@@ -324,6 +645,16 @@ fn simple_hash(x: i32, z: i32) -> f32 {
     (n as u32 as f32) / (u32::MAX as f32)
 }
 
+// Mix function to decorrelate nearby integer seeds (SplitMix32-style)
+fn mix_bits32(mut x: u32) -> u32 {
+    x ^= x >> 16;
+    x = x.wrapping_mul(0x7feb_352d);
+    x ^= x >> 15;
+    x = x.wrapping_mul(0x846c_a68b);
+    x ^= x >> 16;
+    x
+}
+
 /// Spawn floating particles around the player for that Valheim atmosphere
 pub fn spawn_floating_particles(
     mut commands: Commands,
@@ -342,48 +673,44 @@ pub fn spawn_floating_particles(
 
     spawned.0 = true;
 
-    // TEMPORARY: Skip particle spawning to debug blue shapes
-    info!("Particle spawning disabled for debugging");
-    return;
-
     let camera_pos = camera_transform.translation;
 
-    // Small glowing particle mesh
-    let particle_mesh = meshes.add(Sphere::new(0.08).mesh().build());
+    // Larger particle mesh for better visibility
+    let particle_mesh = meshes.add(Sphere::new(0.25).mesh().build());
 
-    // Warm golden pollen material (emissive for glow with bloom)
+    // Bright golden pollen material - very emissive for visibility
     let pollen_material = materials.add(StandardMaterial {
-        base_color: Color::srgba(1.0, 0.95, 0.7, 0.6),
-        emissive: LinearRgba::new(2.0, 1.8, 1.0, 1.0),
-        alpha_mode: AlphaMode::Blend,
+        base_color: Color::srgb(1.0, 0.9, 0.4),
+        emissive: LinearRgba::new(5.0, 4.0, 1.5, 1.0),
+        alpha_mode: AlphaMode::Opaque,
         unlit: true,
         ..default()
     });
 
-    // Soft white dust material
+    // Bright white dust material
     let dust_material = materials.add(StandardMaterial {
-        base_color: Color::srgba(1.0, 1.0, 1.0, 0.4),
-        emissive: LinearRgba::new(0.5, 0.5, 0.6, 1.0),
-        alpha_mode: AlphaMode::Blend,
+        base_color: Color::srgb(1.0, 1.0, 1.0),
+        emissive: LinearRgba::new(4.0, 4.0, 5.0, 1.0),
+        alpha_mode: AlphaMode::Opaque,
         unlit: true,
         ..default()
     });
 
-    let particle_count = 150;
+    let particle_count = 200;
 
     for i in 0..particle_count {
         let hash1 = simple_hash(i * 17, i * 31);
         let hash2 = simple_hash(i * 23, i * 47);
         let hash3 = simple_hash(i * 13, i * 53);
 
-        // Spawn in a sphere around camera start position
-        let radius = 30.0 + hash1 * 70.0;
+        // Spawn in a sphere around camera start position - closer to camera
+        let radius = 15.0 + hash1 * 50.0;
         let angle = hash2 * std::f32::consts::TAU;
-        let height = hash3 * 40.0 + 5.0;
+        let height = hash3 * 30.0 - 5.0; // -5 to +25 relative to camera
 
         let x = camera_pos.x + angle.cos() * radius;
         let z = camera_pos.z + angle.sin() * radius;
-        let y = camera_pos.y - 20.0 + height;
+        let y = camera_pos.y + height;
 
         let material = if hash1 > 0.6 {
             pollen_material.clone()
@@ -391,12 +718,14 @@ pub fn spawn_floating_particles(
             dust_material.clone()
         };
 
-        let scale = 0.5 + hash2 * 1.0;
+        // Visible particle size - larger for debugging
+        let scale = 1.0 + hash2 * 1.0;
 
         commands.spawn((
             Mesh3d(particle_mesh.clone()),
             MeshMaterial3d(material),
             Transform::from_xyz(x, y, z).with_scale(Vec3::splat(scale)),
+            NotShadowCaster,
             FloatingParticle {
                 base_y: y,
                 phase: hash3 * std::f32::consts::TAU,
@@ -469,11 +798,12 @@ impl Plugin for VegetationPlugin {
             .init_resource::<GrassSpawned>()
             .init_resource::<RocksSpawned>()
             .init_resource::<ParticlesSpawned>()
+            .add_systems(Startup, setup_grass_patch_assets)
             // Run in Update to ensure world is populated
             .add_systems(
                 Update,
                 (
-                    spawn_grass_blades,
+                    attach_procedural_grass_to_chunks,
                     spawn_rock_props,
                     spawn_floating_particles,
                     animate_particles,

@@ -85,8 +85,13 @@ pub fn generate_chunk_mesh(
                 }
 
                 if voxel.is_liquid() {
-                    // Water generation disabled for debugging gaps
-                    continue;
+                    // Generate water mesh faces (only visible against air)
+                    check_water_face(chunk, world, local, Face::Top, &mut water_mesh, voxel);
+                    check_water_face(chunk, world, local, Face::Bottom, &mut water_mesh, voxel);
+                    check_water_face(chunk, world, local, Face::North, &mut water_mesh, voxel);
+                    check_water_face(chunk, world, local, Face::South, &mut water_mesh, voxel);
+                    check_water_face(chunk, world, local, Face::East, &mut water_mesh, voxel);
+                    check_water_face(chunk, world, local, Face::West, &mut water_mesh, voxel);
                 } else if voxel.is_solid() {
                     // Solid blocks - render faces adjacent to air or water (transparent)
                     check_face(chunk, world, local, Face::Top, &mut solid_mesh, voxel);
@@ -413,7 +418,7 @@ fn add_face_with_ao(
     let row = (atlas_idx / 4) as f32;
     
     // UV padding to prevent texture bleeding from adjacent tiles
-    let padding = 0.001;
+    let padding = 0.02;
     
     let u_min = col / cols + padding;
     let u_max = (col + 1.0) / cols - padding;
@@ -513,7 +518,7 @@ fn add_face_no_ao(
     let row = (atlas_idx / 4) as f32;
     
     // UV padding to prevent texture bleeding from adjacent tiles
-    let padding = 0.001;
+    let padding = 0.02;
     
     let u_min = col / cols + padding;
     let u_max = (col + 1.0) / cols - padding;

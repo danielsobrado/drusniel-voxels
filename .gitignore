@@ -1,1 +1,10 @@
 /target
+.history/src/voxel/*
+log.txt
+log.err
+.claude/
+.history/
+
+src/*.html
+tools/*.html
+assets/*.html

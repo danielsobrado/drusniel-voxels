@@ -14,6 +14,8 @@ pub enum VoxelType {
     Water = 7,
     Wood = 8,
     Leaves = 9,
+    DungeonWall = 10,
+    DungeonFloor = 11,
 }
 
 #[derive(Clone, Debug)]
@@ -67,6 +69,8 @@ impl Voxel for VoxelType {
             VoxelType::Water => 6,
             VoxelType::Wood => 8,
             VoxelType::Leaves => 9,
+            VoxelType::DungeonWall => 10,
+            VoxelType::DungeonFloor => 11,
         }
     }
 }
