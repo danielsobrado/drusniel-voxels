@@ -33,7 +33,7 @@ impl Plugin for AtmospherePlugin {
         app
             .insert_resource(AtmosphereSettings::default())
             // Soft initial sky tint
-            .insert_resource(ClearColor(Color::srgba(0.60, 0.70, 0.90, 1.0)))
+            .insert_resource(ClearColor(Color::srgba(0.50, 0.64, 0.84, 1.0)))
             // bevy_water for dynamic ocean waves
             .insert_resource(WaterSettings {
                 height: SEA_LEVEL,
@@ -56,7 +56,7 @@ fn setup_atmosphere(
     // Sun directional light with extended shadow range
     commands.spawn((
         DirectionalLight {
-            color: Color::WHITE,
+            color: Color::srgba(1.0, 0.93, 0.82, 1.0),
             illuminance: 15_000.0,
             shadows_enabled: true,
             ..default()
@@ -85,37 +85,31 @@ fn animate_atmosphere(
     let sun_dir = Vec3::new(azimuth * 0.35, -altitude.max(0.2), 0.45).normalize_or_zero();
 
     // Lighting strength based on altitude
-    let day_factor = saturate((altitude + 0.4) * 1.0).max(0.7); // keep a higher floor for nights
-    // Pull sun down and ambient up to reduce contrast
-    let sun_strength = lerp(2500.0, 9000.0, day_factor);
-    let ambient_strength = lerp(3500.0, 8000.0, day_factor);
+    let day_factor = saturate((altitude + 0.4) * 1.0).max(0.65); // keep a higher floor for nights
+    let horizon_warmth = (1.0 - altitude.abs()).clamp(0.0, 1.0);
+    // Warm key light + cooler ambient fill for Valheim-like grading
+    let sun_strength = lerp(4000.0, 10_000.0, day_factor);
+    let ambient_strength = lerp(2800.0, 6000.0, day_factor);
+    let sun_tint = (Vec3::new(1.0, 0.78, 0.62)
+        .lerp(Vec3::new(1.0, 0.93, 0.80), day_factor)
+        + Vec3::splat(horizon_warmth * 0.04))
+        .min(Vec3::splat(1.0));
+    let ambient_tint = Vec3::new(0.10, 0.16, 0.26)
+        .lerp(Vec3::new(0.24, 0.36, 0.52), day_factor);
+    let sky_tint = Vec3::new(0.14, 0.20, 0.34)
+        .lerp(Vec3::new(0.50, 0.68, 0.88), day_factor);
 
     // Update sun
     if let Ok((mut transform, mut light)) = sun_query.single_mut() {
         transform.look_to(sun_dir, Vec3::Y);
         light.illuminance = sun_strength;
-        light.color = Color::srgba(
-            lerp(0.85, 0.95, day_factor),
-            lerp(0.78, 0.94, day_factor),
-            lerp(0.72, 0.92, day_factor),
-            1.0,
-        );
+        light.color = Color::srgba(sun_tint.x, sun_tint.y, sun_tint.z, 1.0);
     }
 
     // Update ambient and sky tint
     ambient.brightness = ambient_strength;
-    ambient.color = Color::srgba(
-        lerp(0.08, 0.65, day_factor),
-        lerp(0.10, 0.75, day_factor),
-        lerp(0.15, 0.90, day_factor),
-        1.0,
-    );
-    clear_color.0 = Color::srgba(
-        lerp(0.10, 0.65, day_factor),
-        lerp(0.14, 0.78, day_factor),
-        lerp(0.20, 0.92, day_factor),
-        1.0,
-    );
+    ambient.color = Color::srgba(ambient_tint.x, ambient_tint.y, ambient_tint.z, 1.0);
+    clear_color.0 = Color::srgba(sky_tint.x, sky_tint.y, sky_tint.z, 1.0);
 
 }
 

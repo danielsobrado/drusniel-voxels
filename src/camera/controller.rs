@@ -3,6 +3,7 @@ use bevy::input::mouse::MouseMotion;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::core_pipeline::Skybox;
 use bevy::pbr::{DistanceFog, FogFalloff};
+use bevy::post_process::bloom::Bloom;
 use bevy::window::{CursorGrabMode, CursorOptions};
 use bevy_water::ImageReformat;
 use crate::voxel::world::VoxelWorld;
@@ -68,6 +69,10 @@ pub fn spawn_camera(mut commands: Commands, asset_server: Res<AssetServer>) {
     
     commands.spawn((
         Camera3d::default(),
+        Bloom {
+            intensity: 0.06, // Subtle glow on bright highlights
+            ..default()
+        },
         Transform::from_xyz(256.0, 50.0, 256.0).looking_at(Vec3::new(200.0, 30.0, 200.0), Vec3::Y),
         PlayerCamera::default(),
         // Tonemapping for better HDR look

@@ -1,0 +1,203 @@
+// Triplanar PBR terrain shader with multi-material support and blending
+// Uses procedural parallax offset derived from normal map strength
+
+#import bevy_pbr::forward_io::VertexOutput
+
+struct TriplanarUniforms {
+    base_color: vec4<f32>,
+    tex_scale: f32,
+    blend_sharpness: f32,
+    normal_intensity: f32,
+    parallax_scale: f32,
+};
+
+@group(#{MATERIAL_BIND_GROUP}) @binding(0) var<uniform> uniforms: TriplanarUniforms;
+
+// Grass textures (material 0)
+@group(#{MATERIAL_BIND_GROUP}) @binding(1) var grass_albedo: texture_2d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(2) var tex_sampler: sampler;
+@group(#{MATERIAL_BIND_GROUP}) @binding(3) var grass_normal: texture_2d<f32>;
+
+// Rock textures (material 1)
+@group(#{MATERIAL_BIND_GROUP}) @binding(4) var rock_albedo: texture_2d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(5) var rock_normal: texture_2d<f32>;
+
+// Sand textures (material 2)
+@group(#{MATERIAL_BIND_GROUP}) @binding(6) var sand_albedo: texture_2d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(7) var sand_normal: texture_2d<f32>;
+
+// Dirt textures (material 3)
+@group(#{MATERIAL_BIND_GROUP}) @binding(8) var dirt_albedo: texture_2d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(9) var dirt_normal: texture_2d<f32>;
+
+fn compute_uv(world_coord: vec2<f32>) -> vec2<f32> {
+    return fract(world_coord / uniforms.tex_scale);
+}
+
+fn triplanar_weights(world_normal: vec3<f32>) -> vec3<f32> {
+    var weights = pow(abs(world_normal), vec3(uniforms.blend_sharpness));
+    return weights / max(weights.x + weights.y + weights.z, 0.001);
+}
+
+fn unpack_normal(sampled: vec3<f32>) -> vec3<f32> {
+    return normalize(sampled * 2.0 - 1.0);
+}
+
+fn reorient_normal(tn: vec3<f32>, wn: vec3<f32>, axis: i32) -> vec3<f32> {
+    var n = vec3(tn.xy * uniforms.normal_intensity, tn.z);
+    n = normalize(n);
+    if (axis == 0) { return normalize(vec3(n.z * sign(wn.x), n.y, n.x)); }
+    if (axis == 1) { return normalize(vec3(n.x, n.z * sign(wn.y), n.y)); }
+    return normalize(vec3(n.x, n.y, n.z * sign(wn.z)));
+}
+
+// Derive height from normal map - steeper normals = lower height
+fn get_height_from_normal(normal_sample: vec3<f32>) -> f32 {
+    let unpacked = unpack_normal(normal_sample);
+    // Z component of normal: flat = 1.0 (high), steep = close to 0 (low)
+    return unpacked.z * 0.5 + 0.5;
+}
+
+// Simple parallax offset using normal-derived height for rock
+fn parallax_offset(uv: vec2<f32>, view_dir: vec3<f32>) -> vec2<f32> {
+    let normal_sample = textureSample(rock_normal, tex_sampler, uv).rgb;
+    let height = get_height_from_normal(normal_sample);
+    let offset = view_dir.xy * (height * uniforms.parallax_scale);
+    return uv - offset;
+}
+
+// Sample albedo with optional parallax for rock
+fn sample_albedo_tp(uv_yz: vec2<f32>, uv_xz: vec2<f32>, uv_xy: vec2<f32>, w: vec3<f32>, mat: i32, view_dir: vec3<f32>) -> vec4<f32> {
+    var cy = uv_yz; var cz = uv_xz; var cx = uv_xy;
+    
+    // Apply parallax only to rock material
+    if (mat == 1) {
+        cy = parallax_offset(uv_yz, view_dir);
+        cz = parallax_offset(uv_xz, view_dir);
+        cx = parallax_offset(uv_xy, view_dir);
+    }
+    
+    var col: vec4<f32>;
+    if (mat == 0) {
+        col = textureSample(grass_albedo, tex_sampler, cy) * w.x +
+              textureSample(grass_albedo, tex_sampler, cz) * w.y +
+              textureSample(grass_albedo, tex_sampler, cx) * w.z;
+    } else if (mat == 1) {
+        col = textureSample(rock_albedo, tex_sampler, cy) * w.x +
+              textureSample(rock_albedo, tex_sampler, cz) * w.y +
+              textureSample(rock_albedo, tex_sampler, cx) * w.z;
+    } else if (mat == 2) {
+        col = textureSample(sand_albedo, tex_sampler, cy) * w.x +
+              textureSample(sand_albedo, tex_sampler, cz) * w.y +
+              textureSample(sand_albedo, tex_sampler, cx) * w.z;
+    } else {
+        col = textureSample(dirt_albedo, tex_sampler, cy) * w.x +
+              textureSample(dirt_albedo, tex_sampler, cz) * w.y +
+              textureSample(dirt_albedo, tex_sampler, cx) * w.z;
+    }
+    return col;
+}
+
+fn sample_normal_tp(uv_yz: vec2<f32>, uv_xz: vec2<f32>, uv_xy: vec2<f32>, w: vec3<f32>, wn: vec3<f32>, mat: i32, view_dir: vec3<f32>) -> vec3<f32> {
+    var cy = uv_yz; var cz = uv_xz; var cx = uv_xy;
+    
+    if (mat == 1) {
+        cy = parallax_offset(uv_yz, view_dir);
+        cz = parallax_offset(uv_xz, view_dir);
+        cx = parallax_offset(uv_xy, view_dir);
+    }
+    
+    var nx: vec3<f32>; var ny: vec3<f32>; var nz: vec3<f32>;
+    if (mat == 0) {
+        nx = textureSample(grass_normal, tex_sampler, cy).rgb;
+        ny = textureSample(grass_normal, tex_sampler, cz).rgb;
+        nz = textureSample(grass_normal, tex_sampler, cx).rgb;
+    } else if (mat == 1) {
+        nx = textureSample(rock_normal, tex_sampler, cy).rgb;
+        ny = textureSample(rock_normal, tex_sampler, cz).rgb;
+        nz = textureSample(rock_normal, tex_sampler, cx).rgb;
+    } else if (mat == 2) {
+        nx = textureSample(sand_normal, tex_sampler, cy).rgb;
+        ny = textureSample(sand_normal, tex_sampler, cz).rgb;
+        nz = textureSample(sand_normal, tex_sampler, cx).rgb;
+    } else {
+        nx = textureSample(dirt_normal, tex_sampler, cy).rgb;
+        ny = textureSample(dirt_normal, tex_sampler, cz).rgb;
+        nz = textureSample(dirt_normal, tex_sampler, cx).rgb;
+    }
+    
+    let n0 = reorient_normal(unpack_normal(nx), wn, 0);
+    let n1 = reorient_normal(unpack_normal(ny), wn, 1);
+    let n2 = reorient_normal(unpack_normal(nz), wn, 2);
+    return normalize(n0 * w.x + n1 * w.y + n2 * w.z);
+}
+
+fn get_base_material(atlas_idx: i32) -> i32 {
+    if (atlas_idx == 0) { return 0; }
+    if (atlas_idx == 2 || atlas_idx == 3) { return 1; }
+    if (atlas_idx == 4) { return 2; }
+    return 3;
+}
+
+@fragment
+fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+    let world_pos = in.world_position.xyz;
+    let world_normal = normalize(in.world_normal);
+    let view_dir = normalize(-world_pos);
+    
+    // Use vertex colors as material weights
+    let mat_weights = in.color; 
+    
+    // Normalize weights to ensure unity
+    let w_total = dot(mat_weights, vec4<f32>(1.0));
+    let w = mat_weights / max(w_total, 0.001);
+
+    let weights = triplanar_weights(world_normal);
+    let uv_yz = compute_uv(world_pos.yz);
+    let uv_xz = compute_uv(world_pos.xz);
+    let uv_xy = compute_uv(world_pos.xy);
+
+    var albedo = vec4<f32>(0.0);
+    var final_normal = vec3<f32>(0.0);
+
+    // Optimization: Only sample materials with significant weight?
+    // Note: Branching on non-uniform values with textureSample can cause artifacts.
+    // Ideally we'd use textureSampleGrad, but for now we'll sample all active materials.
+    // Modern GPUs handle this reasonable well.
+
+    // Material 0: Grass
+    if (w.x > 0.001) {
+        albedo += sample_albedo_tp(uv_yz, uv_xz, uv_xy, weights, 0, view_dir) * w.x;
+        final_normal += sample_normal_tp(uv_yz, uv_xz, uv_xy, weights, world_normal, 0, view_dir) * w.x;
+    }
+
+    // Material 1: Rock
+    if (w.y > 0.001) {
+        albedo += sample_albedo_tp(uv_yz, uv_xz, uv_xy, weights, 1, view_dir) * w.y;
+        final_normal += sample_normal_tp(uv_yz, uv_xz, uv_xy, weights, world_normal, 1, view_dir) * w.y;
+    }
+
+    // Material 2: Sand
+    if (w.z > 0.001) {
+        albedo += sample_albedo_tp(uv_yz, uv_xz, uv_xy, weights, 2, view_dir) * w.z;
+        final_normal += sample_normal_tp(uv_yz, uv_xz, uv_xy, weights, world_normal, 2, view_dir) * w.z;
+    }
+
+    // Material 3: Dirt
+    if (w.w > 0.001) {
+        albedo += sample_albedo_tp(uv_yz, uv_xz, uv_xy, weights, 3, view_dir) * w.w;
+        final_normal += sample_normal_tp(uv_yz, uv_xz, uv_xy, weights, world_normal, 3, view_dir) * w.w;
+    }
+    
+    albedo = albedo * uniforms.base_color;
+    let blended_n = normalize(final_normal);
+
+    // Lighting
+    let light_dir = normalize(vec3(0.4, 0.8, 0.3));
+    let half_dir = normalize(light_dir + view_dir);
+    let ndotl = max(dot(blended_n, light_dir), 0.0);
+    let ndoth = max(dot(blended_n, half_dir), 0.0);
+    
+    let lit = albedo.rgb * (0.35 + ndotl * 0.65) + vec3(pow(ndoth, 32.0) * 0.15);
+    return vec4(lit, albedo.a);
+}

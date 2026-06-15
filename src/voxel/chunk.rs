@@ -1,6 +1,14 @@
 use crate::constants::{CHUNK_SIZE, CHUNK_VOLUME};
 use crate::voxel::types::VoxelType;
 use bevy::prelude::*;
+use serde::{Serialize, Deserialize};
+
+/// Serializable chunk data (voxels only)
+#[derive(Serialize, Deserialize)]
+pub struct ChunkData {
+    pub voxels: Vec<VoxelType>,
+    pub position: IVec3,
+}
 
 pub struct Chunk {
     voxels: [VoxelType; CHUNK_VOLUME],
@@ -85,6 +93,31 @@ impl Chunk {
         let y = (index / CHUNK_SIZE) % CHUNK_SIZE;
         let z = index / (CHUNK_SIZE * CHUNK_SIZE);
         (x, y, z)
+    }
+
+    /// Convert chunk to serializable data
+    pub fn to_data(&self) -> ChunkData {
+        ChunkData {
+            voxels: self.voxels.to_vec(),
+            position: self.position,
+        }
+    }
+
+    /// Create chunk from serializable data
+    pub fn from_data(data: ChunkData) -> Self {
+        let mut voxels = [VoxelType::Air; CHUNK_VOLUME];
+        for (i, v) in data.voxels.into_iter().enumerate() {
+            if i < CHUNK_VOLUME {
+                voxels[i] = v;
+            }
+        }
+        Self {
+            voxels,
+            dirty: true, // Mark dirty so mesh gets generated
+            mesh_entity: None,
+            water_mesh_entity: None,
+            position: data.position,
+        }
     }
 }
 

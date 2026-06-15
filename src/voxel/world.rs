@@ -1,6 +1,7 @@
 use crate::constants::CHUNK_SIZE_I32;
 use crate::voxel::chunk::Chunk;
 use crate::voxel::types::VoxelType;
+use crate::voxel::persistence::WorldData;
 use bevy::prelude::*;
 use std::collections::HashMap;
 
@@ -115,5 +116,23 @@ impl VoxelWorld {
         chunk_pos.x >= 0 && chunk_pos.x < self.world_size_chunks.x &&
         chunk_pos.y >= 0 && chunk_pos.y < self.world_size_chunks.y &&
         chunk_pos.z >= 0 && chunk_pos.z < self.world_size_chunks.z
+    }
+
+    /// Convert world to serializable data
+    pub fn to_data(&self) -> WorldData {
+        WorldData {
+            world_size_chunks: self.world_size_chunks,
+            chunks: self.chunks.values().map(|c| c.to_data()).collect(),
+        }
+    }
+
+    /// Create world from serializable data
+    pub fn from_data(data: WorldData) -> Self {
+        let mut world = Self::new(data.world_size_chunks);
+        for chunk_data in data.chunks {
+            let chunk = Chunk::from_data(chunk_data);
+            world.insert_chunk(chunk);
+        }
+        world
     }
 }

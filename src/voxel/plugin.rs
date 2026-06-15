@@ -1,11 +1,12 @@
 use bevy::prelude::*;
 use crate::constants::{CHUNK_SIZE, CHUNK_SIZE_I32};
 use crate::voxel::chunk::Chunk;
-use crate::voxel::meshing::generate_chunk_mesh;
+use crate::voxel::meshing::{generate_chunk_mesh_with_mode, MeshSettings, MeshMode};
 use crate::voxel::types::VoxelType;
 use crate::voxel::world::VoxelWorld;
+use crate::voxel::persistence::{self, WorldPersistence};
 use crate::rendering::materials::VoxelMaterial;
-use crate::config::loader::load_config;
+use crate::rendering::triplanar_material::TriplanarMaterialHandle;
 
 pub struct VoxelPlugin;
 
@@ -25,6 +26,10 @@ impl Plugin for VoxelPlugin {
                 greedy_meshing: true,
             })
             .insert_resource(VoxelWorld::new(IVec3::new(32, 4, 32)))
+            // Use SurfaceNets for smooth terrain meshing (change to Blocky for Minecraft-style)
+            .insert_resource(MeshSettings { mode: MeshMode::SurfaceNets })
+            // World persistence settings (set force_regenerate to true to regenerate)
+            .insert_resource(WorldPersistence { force_regenerate: false, ..default() })
             .add_systems(Startup, setup_voxel_world)
             .add_systems(Update, mesh_dirty_chunks_system);
     }
@@ -309,7 +314,26 @@ const DEBUG_FLAT_WORLD: bool = false;
 
 fn setup_voxel_world(
     mut world: ResMut<VoxelWorld>,
+    persistence_settings: Res<WorldPersistence>,
 ) {
+    // Try to load saved world unless force_regenerate is set
+    if !persistence_settings.force_regenerate && persistence::saved_world_exists() {
+        info!("Loading saved world from disk...");
+        match persistence::load_world() {
+            Ok(loaded_world) => {
+                *world = loaded_world;
+                info!("World loaded successfully!");
+                return;
+            }
+            Err(e) => {
+                warn!("Failed to load saved world: {}. Generating new world...", e);
+            }
+        }
+    }
+
+    info!("Generating new world...");
+    let start_time = std::time::Instant::now();
+
     // Generate extensive procedural terrain
     let chunk_positions: Vec<IVec3> = world.all_chunk_positions().collect();
     let mut total_sand = 0u32;
@@ -481,28 +505,41 @@ fn setup_voxel_world(
         }
     }
 
+    let generation_time = start_time.elapsed();
     info!("=== WORLD GENERATION SUMMARY ===");
+    info!("Generation time: {:.2}s", generation_time.as_secs_f32());
     info!("Total sand blocks: {}", total_sand);
     info!("Total dungeon wall blocks: {}", total_dungeon_wall);
     info!("Total dungeon floor blocks: {}", total_dungeon_floor);
     info!("Dungeons should be at positions like (0-19, 3-18, 0-19), (96-115, 3-18, 96-115), etc.");
     info!("Sand appears near water (terrain height <= 24) and in sandy biomes");
+
+    // Save world to disk if auto_save is enabled
+    if persistence_settings.auto_save {
+        info!("Saving world to disk...");
+        match persistence::save_world(&world) {
+            Ok(()) => info!("World saved successfully!"),
+            Err(e) => warn!("Failed to save world: {}", e),
+        }
+    }
 }
 
 fn mesh_dirty_chunks_system(
     mut commands: Commands,
     mut world: ResMut<VoxelWorld>,
     mut meshes: ResMut<Assets<Mesh>>,
-    material: Res<VoxelMaterial>,
+    blocky_material: Res<VoxelMaterial>,
+    triplanar_material: Res<TriplanarMaterialHandle>,
     water_material: Res<crate::rendering::materials::WaterMaterial>,
+    mesh_settings: Res<MeshSettings>,
 ) {
     // Collect dirty chunks first to avoid borrowing issues
     let dirty_chunks: Vec<IVec3> = world.dirty_chunks().collect();
-    
+
     for chunk_pos in dirty_chunks {
         // Step 1: Generate mesh data using immutable borrow
         let mesh_result = if let Some(chunk) = world.get_chunk(chunk_pos) {
-            generate_chunk_mesh(chunk, &world)
+            generate_chunk_mesh_with_mode(chunk, &world, mesh_settings.mode)
         } else {
             continue;
         };
@@ -511,9 +548,9 @@ fn mesh_dirty_chunks_system(
         if let Some(chunk) = world.get_chunk_mut(chunk_pos) {
             // Clear dirty flag
             chunk.clear_dirty();
-            
+
             let world_pos = VoxelWorld::chunk_to_world(chunk_pos);
-            
+
             // Handle solid mesh
             if mesh_result.solid.is_empty() {
                 if let Some(entity) = chunk.mesh_entity() {
@@ -523,16 +560,29 @@ fn mesh_dirty_chunks_system(
             } else {
                 let mesh = mesh_result.solid.into_mesh();
                 let mesh_handle = meshes.add(mesh);
-                
+
                 if let Some(entity) = chunk.mesh_entity() {
                     commands.entity(entity).insert(Mesh3d(mesh_handle));
                 } else {
-                    let entity = commands.spawn((
-                        Mesh3d(mesh_handle),
-                        MeshMaterial3d(material.handle.clone()),
-                        Transform::from_xyz(world_pos.x as f32, world_pos.y as f32, world_pos.z as f32),
-                        crate::voxel::meshing::ChunkMesh { chunk_position: chunk_pos },
-                    )).id();
+                    // Spawn with appropriate material based on mesh mode
+                    let entity = match mesh_settings.mode {
+                        MeshMode::Blocky => {
+                            commands.spawn((
+                                Mesh3d(mesh_handle),
+                                MeshMaterial3d(blocky_material.handle.clone()),
+                                Transform::from_xyz(world_pos.x as f32, world_pos.y as f32, world_pos.z as f32),
+                                crate::voxel::meshing::ChunkMesh { chunk_position: chunk_pos },
+                            )).id()
+                        }
+                        MeshMode::SurfaceNets => {
+                            commands.spawn((
+                                Mesh3d(mesh_handle),
+                                MeshMaterial3d(triplanar_material.handle.clone()),
+                                Transform::from_xyz(world_pos.x as f32, world_pos.y as f32, world_pos.z as f32),
+                                crate::voxel::meshing::ChunkMesh { chunk_position: chunk_pos },
+                            )).id()
+                        }
+                    };
                     chunk.set_mesh_entity(entity);
                 }
             }

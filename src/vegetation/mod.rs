@@ -100,61 +100,86 @@ pub fn attach_procedural_grass_to_chunks(
     assets: Res<GrassPatchAssets>,
     water_material: Res<WaterMaterial>,
     mut meshes: ResMut<Assets<Mesh>>,
-    chunk_query: Query<(
+    // Query chunks with StandardMaterial (blocky mode)
+    blocky_chunk_query: Query<(
         Entity,
         &ChunkMesh,
         &Mesh3d,
         &MeshMaterial3d<StandardMaterial>,
         &Transform,
     ), Without<ChunkGrassAttached>>,
+    // Query chunks with TriplanarMaterial (surface nets mode)
+    triplanar_chunk_query: Query<(
+        Entity,
+        &ChunkMesh,
+        &Mesh3d,
+        &MeshMaterial3d<crate::rendering::triplanar_material::TriplanarMaterial>,
+        &Transform,
+    ), Without<ChunkGrassAttached>>,
 ) {
-    for (entity, chunk, chunk_mesh, material, transform) in chunk_query.iter() {
+    // Process blocky chunks
+    for (entity, chunk, chunk_mesh, material, transform) in blocky_chunk_query.iter() {
         // Skip water surfaces
         if material.0 == water_material.handle {
             continue;
         }
 
-        let Some(chunk_source_mesh) = meshes.get(&chunk_mesh.0) else {
-            continue;
-        };
-
-        // Density: blades per square unit; max_count: limit per chunk
-        let instances = collect_grass_instances(chunk_source_mesh, transform, 20, 2000);
-        if instances.is_empty() {
-            continue;
-        }
-
-        let template_mesh = match meshes.get(&assets.blade_mesh) {
-            Some(mesh) => mesh,
-            None => continue,
-        };
-
-        let Some(grass_mesh) = build_grass_patch_mesh(template_mesh, &instances) else {
-            continue;
-        };
-
-        let mesh_handle = meshes.add(grass_mesh);
-
-        let chunk_origin = transform.translation;
-        let center = chunk_origin + Vec3::splat(CHUNK_SIZE as f32 * 0.5);
-
-        // Pick a material handle based on chunk position for deterministic variation
-        let material_idx = ((chunk.chunk_position.x.abs() + chunk.chunk_position.z.abs()) as usize)
-            % assets.materials.len();
-        let material_handle = assets.materials[material_idx].clone();
-
-        commands.entity(entity).insert(ChunkGrassAttached);
-
-        commands.spawn((
-            Mesh3d(mesh_handle),
-            MeshMaterial3d(material_handle),
-            Transform::IDENTITY,
-            GlobalTransform::IDENTITY,
-            Visibility::Visible,
-            InheritedVisibility::VISIBLE,
-            ViewVisibility::default(),
-        ));
+        process_chunk_for_grass(&mut commands, &assets, &mut meshes, entity, chunk, chunk_mesh, transform);
     }
+
+    // Process triplanar chunks (surface nets mode)
+    for (entity, chunk, chunk_mesh, _material, transform) in triplanar_chunk_query.iter() {
+        process_chunk_for_grass(&mut commands, &assets, &mut meshes, entity, chunk, chunk_mesh, transform);
+    }
+}
+
+/// Helper function to spawn grass on a chunk
+fn process_chunk_for_grass(
+    commands: &mut Commands,
+    assets: &Res<GrassPatchAssets>,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    entity: Entity,
+    chunk: &ChunkMesh,
+    chunk_mesh: &Mesh3d,
+    transform: &Transform,
+) {
+    let Some(chunk_source_mesh) = meshes.get(&chunk_mesh.0) else {
+        return;
+    };
+
+    // Density: blades per square unit; max_count: limit per chunk
+    let instances = collect_grass_instances(chunk_source_mesh, transform, 20, 2000);
+    if instances.is_empty() {
+        return;
+    }
+
+    let template_mesh = match meshes.get(&assets.blade_mesh) {
+        Some(mesh) => mesh,
+        None => return,
+    };
+
+    let Some(grass_mesh) = build_grass_patch_mesh(template_mesh, &instances) else {
+        return;
+    };
+
+    let mesh_handle = meshes.add(grass_mesh);
+
+    // Pick a material handle based on chunk position for deterministic variation
+    let material_idx = ((chunk.chunk_position.x.abs() + chunk.chunk_position.z.abs()) as usize)
+        % assets.materials.len();
+    let material_handle = assets.materials[material_idx].clone();
+
+    commands.entity(entity).insert(ChunkGrassAttached);
+
+    commands.spawn((
+        Mesh3d(mesh_handle),
+        MeshMaterial3d(material_handle),
+        Transform::IDENTITY,
+        GlobalTransform::IDENTITY,
+        Visibility::Visible,
+        InheritedVisibility::VISIBLE,
+        ViewVisibility::default(),
+    ));
 }
 
 /// Extract grass instances from a mesh by sampling upward-facing triangles

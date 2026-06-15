@@ -2,9 +2,13 @@
 .history/src/voxel/*
 log.txt
 log.err
-.claude/
+*.settings.json
+*.local.json
 .history/
 
 src/*.html
 tools/*.html
 assets/*.html
+
+# World save file
+world_data.bin

@@ -6,6 +6,22 @@ use crate::voxel::types::{VoxelType, Voxel};
 #[derive(Component)]
 pub struct BlockHighlight;
 
+/// Component to mark the debug overlay text
+#[derive(Component)]
+pub struct DebugOverlay;
+
+/// Resource to track debug overlay visibility
+#[derive(Resource)]
+pub struct DebugOverlayState {
+    pub visible: bool,
+}
+
+impl Default for DebugOverlayState {
+    fn default() -> Self {
+        Self { visible: false }
+    }
+}
+
 /// Resource tracking the currently targeted block
 #[derive(Resource, Default)]
 pub struct TargetedBlock {
@@ -210,39 +226,22 @@ pub fn render_block_highlight(
     }
 }
 
-/// System to debug voxel info when D is pressed
+/// System to debug voxel info when G is pressed
 pub fn debug_voxel_info_system(
     keyboard: Res<ButtonInput<KeyCode>>,
     targeted: Res<TargetedBlock>,
     world: Res<VoxelWorld>,
     camera_query: Query<&Transform, With<crate::camera::controller::PlayerCamera>>,
-    sun_query: Query<(&Transform, &DirectionalLight), With<crate::environment::Sun>>,
-    ambient: Res<AmbientLight>,
 ) {
-    if keyboard.just_pressed(KeyCode::KeyD) {
-        info!("=== DEBUG VOXEL INFO ===");
-
-        // Sun/Light info
-        if let Ok((sun_transform, sun_light)) = sun_query.single() {
-            let sun_dir = sun_transform.forward().as_vec3();
-            info!("Sun direction: ({:.2}, {:.2}, {:.2})", sun_dir.x, sun_dir.y, sun_dir.z);
-            info!("Sun illuminance: {:.0}", sun_light.illuminance);
-            info!("Sun shadows enabled: {}", sun_light.shadows_enabled);
-        }
-        info!("Ambient brightness: {:.0}", ambient.brightness);
+    if keyboard.just_pressed(KeyCode::KeyG) {
+        info!("╔══════════════════════════════════════════════════════════════╗");
+        info!("║              DETAILED BLOCK DEBUG INFO [G]                   ║");
+        info!("╚══════════════════════════════════════════════════════════════╝");
 
         // Camera position
         if let Ok(camera) = camera_query.single() {
             let pos = camera.translation;
-            info!("Camera pos: ({:.1}, {:.1}, {:.1})", pos.x, pos.y, pos.z);
-
-            let block_pos = IVec3::new(
-                pos.x.floor() as i32,
-                pos.y.floor() as i32,
-                pos.z.floor() as i32,
-            );
-            let chunk_pos = VoxelWorld::world_to_chunk(block_pos);
-            info!("Camera chunk: {:?}", chunk_pos);
+            info!("Camera: ({:.2}, {:.2}, {:.2})", pos.x, pos.y, pos.z);
         }
 
         // Targeted block info
@@ -250,69 +249,313 @@ pub fn debug_voxel_info_system(
             let chunk_pos = VoxelWorld::world_to_chunk(pos);
             let local_pos = VoxelWorld::world_to_local(pos);
 
-            info!("Targeted block:");
-            info!("  World pos: {:?}", pos);
-            info!("  Chunk pos: {:?}", chunk_pos);
-            info!("  Local pos: {:?}", local_pos);
-            info!("  Voxel type: {:?}", voxel_type);
-            info!("  Atlas index: {}", voxel_type.atlas_index());
-            info!("  Is solid: {}", voxel_type.is_solid());
-            info!("  Is transparent: {}", voxel_type.is_transparent());
+            info!("┌─────────────────────────────────────────────────────────────┐");
+            info!("│ TARGETED BLOCK                                              │");
+            info!("├─────────────────────────────────────────────────────────────┤");
+            info!("│ World pos: {:?}", pos);
+            info!("│ Chunk pos: {:?}  Local: {:?}", chunk_pos, local_pos);
+            info!("│ Type: {:?} (atlas: {})", voxel_type, voxel_type.atlas_index());
+            info!("│ Solid: {}  Transparent: {}  Liquid: {}",
+                voxel_type.is_solid(), voxel_type.is_transparent(), voxel_type.is_liquid());
+            info!("└─────────────────────────────────────────────────────────────┘");
 
-            // Check neighbors
-            info!("  Neighbors:");
+            // 3x3x3 cube around targeted block
+            info!("┌─────────────────────────────────────────────────────────────┐");
+            info!("│ 3x3x3 BLOCK CUBE (centered on target)                       │");
+            info!("├─────────────────────────────────────────────────────────────┤");
+
+            for dy in (-1..=1).rev() {
+                info!("│ Y={:+} layer:", dy);
+                for dz in -1..=1 {
+                    let mut row = String::from("│   ");
+                    for dx in -1..=1 {
+                        let scan_pos = pos + IVec3::new(dx, dy, dz);
+                        let symbol = match world.get_voxel(scan_pos) {
+                            Some(v) => {
+                                if dx == 0 && dy == 0 && dz == 0 {
+                                    "[X]" // Target block
+                                } else if v.is_liquid() {
+                                    "~W~" // Water
+                                } else if v == VoxelType::Air {
+                                    " . " // Air
+                                } else if v.is_solid() {
+                                    " # " // Solid
+                                } else {
+                                    " ? "
+                                }
+                            }
+                            None => " - ", // Outside world
+                        };
+                        row.push_str(symbol);
+                    }
+                    row.push_str(&format!("  (z={:+})", dz));
+                    info!("{}", row);
+                }
+            }
+            info!("│ Legend: [X]=target  #=solid  ~W~=water  .=air  -=outside   │");
+            info!("└─────────────────────────────────────────────────────────────┘");
+
+            // Detailed neighbor analysis
+            info!("┌─────────────────────────────────────────────────────────────┐");
+            info!("│ DIRECT NEIGHBORS (6 faces)                                  │");
+            info!("├─────────────────────────────────────────────────────────────┤");
             let neighbors = [
-                ("Top   (+Y)", IVec3::new(0, 1, 0)),
-                ("Bottom(-Y)", IVec3::new(0, -1, 0)),
-                ("North (+Z)", IVec3::new(0, 0, 1)),
-                ("South (-Z)", IVec3::new(0, 0, -1)),
-                ("East  (+X)", IVec3::new(1, 0, 0)),
-                ("West  (-X)", IVec3::new(-1, 0, 0)),
+                ("Top    (+Y)", IVec3::Y),
+                ("Bottom (-Y)", IVec3::NEG_Y),
+                ("North  (+Z)", IVec3::Z),
+                ("South  (-Z)", IVec3::NEG_Z),
+                ("East   (+X)", IVec3::X),
+                ("West   (-X)", IVec3::NEG_X),
             ];
 
             for (name, offset) in neighbors {
                 let neighbor_pos = pos + offset;
                 let neighbor_chunk = VoxelWorld::world_to_chunk(neighbor_pos);
+                let cross_chunk = neighbor_chunk != chunk_pos;
 
                 match world.get_voxel(neighbor_pos) {
                     Some(n_type) => {
-                        let same_chunk = neighbor_chunk == chunk_pos;
-                        info!("    {}: {:?} (atlas:{}) chunk:{:?} same_chunk:{}",
-                            name, n_type, n_type.atlas_index(), neighbor_chunk, same_chunk);
+                        let flags = format!("{}{}{}",
+                            if n_type.is_solid() { "S" } else { "-" },
+                            if n_type.is_transparent() { "T" } else { "-" },
+                            if n_type.is_liquid() { "L" } else { "-" }
+                        );
+                        info!("│ {}: {:?} [{}] {:?}{}",
+                            name, n_type, flags, neighbor_pos,
+                            if cross_chunk { " (CROSS-CHUNK)" } else { "" });
                     }
                     None => {
-                        info!("    {}: NONE (outside world) chunk:{:?}", name, neighbor_chunk);
+                        info!("│ {}: OUTSIDE WORLD at {:?}", name, neighbor_pos);
+                    }
+                }
+            }
+            info!("│ Flags: S=solid, T=transparent, L=liquid                     │");
+            info!("└─────────────────────────────────────────────────────────────┘");
+
+            // Water analysis - critical for debugging blue cracks
+            info!("┌─────────────────────────────────────────────────────────────┐");
+            info!("│ WATER ANALYSIS (5x5x5 area) - Blue Crack Debug              │");
+            info!("├─────────────────────────────────────────────────────────────┤");
+
+            let mut water_voxels: Vec<(IVec3, i32, i32, i32)> = Vec::new();
+            let mut water_exposed_to_air = 0;
+            let mut water_adjacent_to_solid = 0;
+
+            for dx in -2..=2 {
+                for dy in -2..=2 {
+                    for dz in -2..=2 {
+                        let scan_pos = pos + IVec3::new(dx, dy, dz);
+                        if let Some(voxel) = world.get_voxel(scan_pos) {
+                            if voxel.is_liquid() {
+                                water_voxels.push((scan_pos, dx, dy, dz));
+
+                                // Check adjacency
+                                let mut has_air = false;
+                                let mut has_solid = false;
+                                for offset in [IVec3::X, IVec3::NEG_X, IVec3::Y, IVec3::NEG_Y, IVec3::Z, IVec3::NEG_Z] {
+                                    if let Some(adj) = world.get_voxel(scan_pos + offset) {
+                                        if adj == VoxelType::Air { has_air = true; }
+                                        if adj.is_solid() { has_solid = true; }
+                                    }
+                                }
+                                if has_air { water_exposed_to_air += 1; }
+                                if has_solid { water_adjacent_to_solid += 1; }
+                            }
+                        }
                     }
                 }
             }
 
-            // Check skylight - count solid blocks above
-            info!("  Skylight check (blocks above):");
-            let mut solid_above = 0;
-            for y_offset in 1..=20 {
-                let check_pos = pos + IVec3::new(0, y_offset, 0);
-                if let Some(voxel) = world.get_voxel(check_pos) {
-                    if voxel.is_solid() {
-                        solid_above += 1;
-                        info!("    y+{}: {:?} (SOLID)", y_offset, voxel);
-                    }
-                } else {
-                    break; // Outside world
-                }
-            }
-            info!("    Total solid blocks above (20 checked): {}", solid_above);
+            info!("│ Total water voxels: {}", water_voxels.len());
+            info!("│ Water exposed to AIR: {} (potential visible faces)", water_exposed_to_air);
+            info!("│ Water adjacent to SOLID: {} (terrain contact)", water_adjacent_to_solid);
 
-            // Check if chunk exists
-            if world.get_chunk(chunk_pos).is_some() {
-                info!("  Chunk exists: YES");
+            if !water_voxels.is_empty() {
+                info!("│");
+                info!("│ Water positions (showing up to 15):");
+                for (water_pos, dx, dy, dz) in water_voxels.iter().take(15) {
+                    // Detailed per-water analysis
+                    let mut adj_details = Vec::new();
+                    for (dir_name, offset) in [
+                        ("+X", IVec3::X), ("-X", IVec3::NEG_X),
+                        ("+Y", IVec3::Y), ("-Y", IVec3::NEG_Y),
+                        ("+Z", IVec3::Z), ("-Z", IVec3::NEG_Z),
+                    ] {
+                        if let Some(adj) = world.get_voxel(*water_pos + offset) {
+                            if adj == VoxelType::Air {
+                                adj_details.push(format!("{}:Air", dir_name));
+                            } else if adj.is_solid() {
+                                adj_details.push(format!("{}:Sld", dir_name));
+                            }
+                        }
+                    }
+                    info!("│   {:?} (off:{:+},{:+},{:+}) -> [{}]",
+                        water_pos, dx, dy, dz, adj_details.join(" "));
+                }
+                if water_voxels.len() > 15 {
+                    info!("│   ... and {} more water voxels", water_voxels.len() - 15);
+                }
             } else {
-                info!("  Chunk exists: NO!");
+                info!("│ No water found near targeted block");
             }
+            info!("└─────────────────────────────────────────────────────────────┘");
+
+            // Air pockets analysis - potential gap areas
+            info!("┌─────────────────────────────────────────────────────────────┐");
+            info!("│ AIR POCKET ANALYSIS (potential gap areas)                   │");
+            info!("├─────────────────────────────────────────────────────────────┤");
+
+            let mut air_between_water_and_solid = 0;
+            for dx in -2..=2 {
+                for dy in -2..=2 {
+                    for dz in -2..=2 {
+                        let scan_pos = pos + IVec3::new(dx, dy, dz);
+                        if let Some(voxel) = world.get_voxel(scan_pos) {
+                            if voxel == VoxelType::Air {
+                                // Check if this air is between water and solid
+                                let mut has_water_neighbor = false;
+                                let mut has_solid_neighbor = false;
+                                for offset in [IVec3::X, IVec3::NEG_X, IVec3::Y, IVec3::NEG_Y, IVec3::Z, IVec3::NEG_Z] {
+                                    if let Some(adj) = world.get_voxel(scan_pos + offset) {
+                                        if adj.is_liquid() { has_water_neighbor = true; }
+                                        if adj.is_solid() { has_solid_neighbor = true; }
+                                    }
+                                }
+                                if has_water_neighbor && has_solid_neighbor {
+                                    air_between_water_and_solid += 1;
+                                    info!("│ AIR GAP at {:?} (off:{:+},{:+},{:+}) - water+solid neighbors!",
+                                        scan_pos, dx, dy, dz);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if air_between_water_and_solid == 0 {
+                info!("│ No air gaps found between water and solid blocks");
+            } else {
+                info!("│ FOUND {} air gaps between water and solid!", air_between_water_and_solid);
+            }
+            info!("└─────────────────────────────────────────────────────────────┘");
+
         } else {
-            info!("No block targeted");
+            info!("│ No block targeted - look at a block first");
         }
 
-        info!("========================");
+        info!("══════════════════════════════════════════════════════════════════");
+    }
+}
+
+/// Setup debug overlay UI
+pub fn setup_debug_overlay(mut commands: Commands) {
+    commands.spawn((
+        Text::new(""),
+        TextFont {
+            font_size: 14.0,
+            ..default()
+        },
+        TextColor(Color::srgba(1.0, 1.0, 0.0, 0.9)),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(10.0),
+            left: Val::Px(10.0),
+            ..default()
+        },
+        Visibility::Hidden,
+        DebugOverlay,
+    ));
+}
+
+/// Toggle debug overlay with F3 key
+pub fn toggle_debug_overlay(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut state: ResMut<DebugOverlayState>,
+    mut query: Query<&mut Visibility, With<DebugOverlay>>,
+) {
+    if keyboard.just_pressed(KeyCode::F3) {
+        state.visible = !state.visible;
+        for mut vis in query.iter_mut() {
+            *vis = if state.visible {
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
+            };
+        }
+    }
+}
+
+/// Update debug overlay text with real-time info
+pub fn update_debug_overlay(
+    state: Res<DebugOverlayState>,
+    targeted: Res<TargetedBlock>,
+    world: Res<VoxelWorld>,
+    camera_query: Query<&Transform, With<crate::camera::controller::PlayerCamera>>,
+    mut query: Query<&mut Text, With<DebugOverlay>>,
+) {
+    if !state.visible {
+        return;
+    }
+
+    let mut text_content = String::new();
+
+    // Camera position
+    if let Ok(camera) = camera_query.single() {
+        let pos = camera.translation;
+        text_content.push_str(&format!("Pos: ({:.1}, {:.1}, {:.1})\n", pos.x, pos.y, pos.z));
+
+        let block_pos = IVec3::new(
+            pos.x.floor() as i32,
+            pos.y.floor() as i32,
+            pos.z.floor() as i32,
+        );
+        let chunk_pos = VoxelWorld::world_to_chunk(block_pos);
+        text_content.push_str(&format!("Chunk: {:?}\n", chunk_pos));
+    }
+
+    text_content.push_str("\n");
+
+    // Targeted block info
+    if let (Some(pos), Some(voxel_type)) = (targeted.position, targeted.voxel_type) {
+        text_content.push_str(&format!("Target: {:?}\n", pos));
+        text_content.push_str(&format!("Type: {:?}\n", voxel_type));
+
+        // Water scan in 5x5x5 area
+        let mut water_count = 0;
+        let mut water_with_air = 0;
+        for dx in -2..=2 {
+            for dy in -2..=2 {
+                for dz in -2..=2 {
+                    let scan_pos = pos + IVec3::new(dx, dy, dz);
+                    if let Some(voxel) = world.get_voxel(scan_pos) {
+                        if voxel.is_liquid() {
+                            water_count += 1;
+                            // Check if this water is adjacent to air
+                            for offset in [IVec3::X, IVec3::NEG_X, IVec3::Y, IVec3::NEG_Y, IVec3::Z, IVec3::NEG_Z] {
+                                if let Some(adj) = world.get_voxel(scan_pos + offset) {
+                                    if adj == VoxelType::Air {
+                                        water_with_air += 1;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        text_content.push_str(&format!("\nWater (5x5x5): {}\n", water_count));
+        text_content.push_str(&format!("Water+Air adj: {}\n", water_with_air));
+    } else {
+        text_content.push_str("Target: None\n");
+    }
+
+    text_content.push_str("\n[F3] Toggle overlay");
+    text_content.push_str("\n[G] Detailed log");
+
+    for mut text in query.iter_mut() {
+        **text = text_content.clone();
     }
 }
 
@@ -324,12 +567,16 @@ impl Plugin for InteractionPlugin {
         app
             .init_resource::<TargetedBlock>()
             .init_resource::<HeldBlock>()
+            .init_resource::<DebugOverlayState>()
+            .add_systems(Startup, setup_debug_overlay)
             .add_systems(Update, (
                 update_targeted_block,
                 break_block_system,
                 place_block_system,
                 render_block_highlight,
                 debug_voxel_info_system,
+                toggle_debug_overlay,
+                update_debug_overlay,
             ).chain());
     }
 }
