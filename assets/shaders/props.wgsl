@@ -51,7 +51,7 @@ struct PropsPbrSample {
 const EXPOSURE_BLENDER: f32 = 0.0010019079;
 
 fn compute_uv(world_coord: vec2<f32>) -> vec2<f32> {
-    return fract(world_coord / uniforms.tex_scale);
+    return world_coord / uniforms.tex_scale;
 }
 
 fn triplanar_weights(world_normal: vec3<f32>) -> vec3<f32> {
@@ -247,5 +247,5 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Match Bevy's pre-exposed lighting convention: scale by exposure relative to the BLENDER baseline.
     let exposure_ratio = view.exposure / EXPOSURE_BLENDER;
-    return vec4(color * exposure_ratio, final_pbr.albedo.a);
+    return vec4(color * exposure_ratio, 1.0);
 }

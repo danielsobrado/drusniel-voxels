@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use crate::camera::controller::PlayerCamera;
 use crate::performance::{AreaTimingRecorder, area_timer};
 use crate::player::Player;
+use crate::props::instanced_render::PropTransformDirty;
 use crate::vegetation::VegetationConfig;
 use crate::vegetation::WindState;
 
@@ -155,7 +156,11 @@ pub fn update_foliage_fade(
     mut candidates: ResMut<FoliageFadeCandidates>,
     camera_query: Query<&GlobalTransform, With<PlayerCamera>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut foliage_query: Query<(&GlobalTransform, &mut MeshMaterial3d<StandardMaterial>, &mut FoliageFade)>,
+    mut foliage_query: Query<(
+        &GlobalTransform,
+        &mut MeshMaterial3d<StandardMaterial>,
+        &mut FoliageFade,
+    )>,
     mut last_update: Local<f32>,
     frame: Res<FrameCount>,
     mut timing: ResMut<AreaTimingRecorder>,
@@ -181,7 +186,8 @@ pub fn update_foliage_fade(
     let camera_pos = camera_transform.translation();
     let camera_forward = (camera_transform.rotation() * -Vec3::Z).normalize_or_zero();
 
-    let max_fade_distance = (settings.near_fade_end * settings.max_distance_scale.max(0.1)).max(0.1);
+    let max_fade_distance =
+        (settings.near_fade_end * settings.max_distance_scale.max(0.1)).max(0.1);
     let max_distance = settings
         .max_update_distance
         .min(max_fade_distance)
@@ -203,6 +209,8 @@ pub fn update_foliage_fade(
     }
     let forward_changed = candidates.last_forward.length_squared() < 0.0001
         || forward_xz.dot(candidates.last_forward) < 0.98;
+    let mut faded_entities = 0usize;
+    let mut material_updates = 0usize;
 
     let needs_rebuild = center_cell != candidates.last_cell
         || cell_radius != candidates.last_radius
@@ -259,8 +267,12 @@ pub fn update_foliage_fade(
         };
 
         let distance_scale = fade.distance_scale.max(0.01);
-        let start = (settings.near_fade_start * distance_scale).max(0.0).min(max_distance);
-        let end = (settings.near_fade_end * distance_scale).max(start).min(max_distance);
+        let start = (settings.near_fade_start * distance_scale)
+            .max(0.0)
+            .min(max_distance);
+        let end = (settings.near_fade_end * distance_scale)
+            .max(start)
+            .min(max_distance);
         let min_alpha = (settings.near_fade_min_alpha * fade.min_alpha_scale).clamp(0.0, 1.0);
 
         let offset = transform.translation() - camera_pos;
@@ -291,12 +303,15 @@ pub fn update_foliage_fade(
         let use_blend = end > 0.0001 && distance <= end;
 
         if use_blend {
+            faded_entities += 1;
             new_active.insert(entity);
             if fade.blended_material.is_none() {
                 if let Some(base_material) = materials.get(&fade.base_material) {
                     let mut blended = base_material.clone();
                     blended.alpha_mode = AlphaMode::Blend;
-                    blended.base_color.set_alpha(fade.current_alpha.clamp(0.0, 1.0));
+                    blended
+                        .base_color
+                        .set_alpha(fade.current_alpha.clamp(0.0, 1.0));
                     fade.blended_material = Some(materials.add(blended));
                 }
             }
@@ -321,10 +336,12 @@ pub fn update_foliage_fade(
             if let Some(material) = materials.get_mut(&material_handle.0) {
                 material.base_color.set_alpha(target_alpha);
                 fade.current_alpha = target_alpha;
+                material_updates += 1;
             }
         } else {
             if material_handle.0 != fade.base_material {
                 material_handle.0 = fade.base_material.clone();
+                material_updates += 1;
             }
             fade.current_alpha = fade.base_alpha;
         }
@@ -340,11 +357,23 @@ pub fn update_foliage_fade(
         };
         if material_handle.0 != fade.base_material {
             material_handle.0 = fade.base_material.clone();
+            material_updates += 1;
         }
         fade.current_alpha = fade.base_alpha;
     }
 
     active.entities = new_active;
+    let active_count = active.entities.len();
+    let candidate_count = candidates.entities.len();
+    drop(_timer);
+    timing.record_count(frame.0, "Foliage Fade Candidates", candidate_count as f64);
+    timing.record_count(frame.0, "Foliage Fade Active", active_count as f64);
+    timing.record_count(frame.0, "Foliage Fade Entities", faded_entities as f64);
+    timing.record_count(
+        frame.0,
+        "Foliage Fade Material Updates",
+        material_updates as f64,
+    );
 }
 
 #[derive(Resource, Default)]
@@ -353,6 +382,7 @@ pub struct GrassPropWindActive {
 }
 
 pub fn update_grass_prop_wind(
+    mut commands: Commands,
     time: Res<Time>,
     wind_state: Option<Res<WindState>>,
     veg_config: Option<Res<VegetationConfig>>,
@@ -408,7 +438,12 @@ pub fn update_grass_prop_wind(
         .single()
         .ok()
         .map(|transform| transform.translation())
-        .or_else(|| player_query.single().ok().map(|transform| transform.translation()));
+        .or_else(|| {
+            player_query
+                .single()
+                .ok()
+                .map(|transform| transform.translation())
+        });
 
     let Some(reference_pos) = reference_pos else {
         return;
@@ -421,6 +456,8 @@ pub fn update_grass_prop_wind(
     let center_cell = cell_for(reference_pos, cell_size);
     let cell_radius = (max_effect_distance / cell_size).ceil() as i32;
     let mut new_active = HashSet::with_capacity(active.entities.len());
+    let mut wind_updates = 0usize;
+    let mut reset_updates = 0usize;
 
     for x in (center_cell.x - cell_radius)..=(center_cell.x + cell_radius) {
         for z in (center_cell.y - cell_radius)..=(center_cell.y + cell_radius) {
@@ -464,6 +501,8 @@ pub fn update_grass_prop_wind(
                 transform.translation = prop.base_translation;
                 transform.rotation = prop.base_rotation * wind_rot * push_rot;
                 transform.scale = prop.base_scale;
+                commands.entity(entity).insert(PropTransformDirty);
+                wind_updates += 1;
             }
         }
     }
@@ -483,10 +522,17 @@ pub fn update_grass_prop_wind(
             transform.translation = prop.base_translation;
             transform.rotation = prop.base_rotation;
             transform.scale = prop.base_scale;
+            commands.entity(entity).insert(PropTransformDirty);
+            reset_updates += 1;
         }
     }
 
     active.entities = new_active;
+    let active_count = active.entities.len();
+    drop(_timer);
+    timing.record_count(frame.0, "Grass Wind Active", active_count as f64);
+    timing.record_count(frame.0, "Grass Wind Updates", wind_updates as f64);
+    timing.record_count(frame.0, "Grass Wind Resets", reset_updates as f64);
 }
 
 pub fn index_foliage_fade_entities(

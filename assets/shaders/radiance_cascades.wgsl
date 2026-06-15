@@ -6,10 +6,10 @@
 //! for efficient, high-quality global illumination.
 //! Based on the Radiance Cascades technique by Alexander Sannikov.
 
-#import bevy_pbr::{
-    mesh_view_bindings::view,
-    forward_io::VertexOutput,
-}
+#import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
+#import "shaders/naadf/ray_trace.wgsl" NaadfRay
+#import "shaders/naadf/world_trace.wgsl" naadf_world_surface_normal, trace_naadf_world
+#import "shaders/naadf/lighting_queries.wgsl" naadf_sun_visibility_world, naadf_terrain_ao_visibility_world, naadf_contact_shadow_visibility_world
 
 // ============================================================================
 // Uniforms
@@ -47,18 +47,20 @@ struct RadianceCascadeParams {
     // Temporal
     frame_index: u32,
     temporal_blend: f32,
-    _padding4: vec2<f32>,
+    voxel_backend: u32,
+    backend_switch_generation: u32,
     
     // Camera
     camera_position: vec3<f32>,
-    _padding5: f32,
+    voxel_backend_query_mask: u32,
+    naadf_counts: vec4<u32>,
     inv_view_proj: mat4x4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> params: RadianceCascadeParams;
 @group(0) @binding(1) var sdf_volume: texture_3d<f32>;
 @group(0) @binding(2) var sdf_sampler: sampler;
-@group(0) @binding(3) var gbuffer_depth: texture_2d<f32>;
+@group(0) @binding(3) var gbuffer_depth: texture_depth_2d;
 @group(0) @binding(4) var gbuffer_normal: texture_2d<f32>;
 @group(0) @binding(5) var gbuffer_albedo: texture_2d<f32>;
 @group(0) @binding(6) var radiance_cascade_0: texture_2d<f32>;  // Finest cascade
@@ -68,6 +70,10 @@ struct RadianceCascadeParams {
 @group(0) @binding(10) var history_texture: texture_2d<f32>;
 @group(0) @binding(11) var blue_noise: texture_2d<f32>;
 @group(0) @binding(12) var linear_sampler: sampler;
+
+// NAADF record buffers are declared by the imported world trace module at
+// @group(3). Phase 2 binds those buffers for the cascade pipeline; query
+// behavior stays on the SDF path until the per-query phases replace it.
 
 // ============================================================================
 // Constants
@@ -81,6 +87,16 @@ const INV_PI: f32 = 0.31830988618;
 const MAX_STEPS: u32 = 64u;
 const SDF_EPSILON: f32 = 0.001;
 const RAY_EPSILON: f32 = 0.01;
+const GI_BACKEND_CURRENT_SDF: u32 = 0u;
+const GI_BACKEND_NAADF: u32 = 1u;
+const NAADF_QUERY_GI_SECONDARY: u32 = 1u;
+const NAADF_QUERY_SUN_VISIBILITY: u32 = 2u;
+const NAADF_QUERY_TERRAIN_AO: u32 = 4u;
+const NAADF_QUERY_CONTACT_SHADOW: u32 = 8u;
+const NAADF_CONTACT_SHADOW_DISTANCE: f32 = 3.0;
+const NAADF_TERRAIN_AO_DISTANCE: f32 = 2.5;
+const NAADF_SHORT_RANGE_STEPS: u32 = 24u;
+const NAADF_GI_SECONDARY_SAMPLES: u32 = 2u;
 
 // Cascade intervals (each cascade covers 4x the area of the previous)
 const CASCADE_SCALE: f32 = 4.0;
@@ -173,6 +189,52 @@ fn sphere_trace(origin: vec3<f32>, direction: vec3<f32>, max_dist: f32) -> RayHi
     return result;
 }
 
+fn trace_current_sdf_gi(origin: vec3<f32>, direction: vec3<f32>, max_dist: f32) -> RayHit {
+    return sphere_trace(origin, direction, max_dist);
+}
+
+fn trace_naadf_gi(origin: vec3<f32>, direction: vec3<f32>, max_dist: f32) -> RayHit {
+    let ray = NaadfRay(origin, normalize(direction), max_dist, 1u);
+    let naadf_hit = trace_naadf_world(
+        ray,
+        MAX_STEPS,
+        naadf_chunk_count(),
+        naadf_chunk_lookup_count(),
+    );
+
+    var result: RayHit;
+    result.hit = naadf_hit.hit != 0u;
+    result.distance = select(max_dist, naadf_hit.distance, result.hit);
+    result.position = origin + normalize(direction) * result.distance;
+    result.normal = select(
+        vec3<f32>(0.0),
+        naadf_world_surface_normal(naadf_hit, naadf_chunk_count(), naadf_chunk_lookup_count()),
+        result.hit,
+    );
+    result.steps = naadf_hit.steps;
+    return result;
+}
+
+fn use_naadf_for_query(query_mask: u32) -> bool {
+    return params.voxel_backend == GI_BACKEND_NAADF &&
+        (params.voxel_backend_query_mask & query_mask) != 0u;
+}
+
+fn naadf_chunk_count() -> u32 {
+    return params.naadf_counts.x;
+}
+
+fn naadf_chunk_lookup_count() -> u32 {
+    return params.naadf_counts.y;
+}
+
+fn trace_gi_backend(origin: vec3<f32>, direction: vec3<f32>, max_dist: f32, query_mask: u32) -> RayHit {
+    if use_naadf_for_query(query_mask) {
+        return trace_naadf_gi(origin, direction, max_dist);
+    }
+    return trace_current_sdf_gi(origin, direction, max_dist);
+}
+
 /// Soft shadow using SDF (penumbra estimation)
 fn soft_shadow_sdf(origin: vec3<f32>, direction: vec3<f32>, max_dist: f32, k: f32) -> f32 {
     var shadow = 1.0;
@@ -196,6 +258,91 @@ fn soft_shadow_sdf(origin: vec3<f32>, direction: vec3<f32>, max_dist: f32, k: f3
     }
     
     return saturate(shadow);
+}
+
+fn soft_shadow_backend(origin: vec3<f32>, direction: vec3<f32>, max_dist: f32, k: f32) -> f32 {
+    if use_naadf_for_query(NAADF_QUERY_SUN_VISIBILITY) {
+        return naadf_sun_visibility_world(
+            origin,
+            direction,
+            max_dist,
+            MAX_STEPS,
+            naadf_chunk_count(),
+            naadf_chunk_lookup_count(),
+        );
+    }
+    return soft_shadow_sdf(origin, direction, max_dist, k);
+}
+
+fn terrain_ao_sdf(world_pos: vec3<f32>) -> f32 {
+    return saturate(sample_sdf_smooth(world_pos) * 2.0 + 0.5);
+}
+
+fn terrain_ao_backend(world_pos: vec3<f32>, normal: vec3<f32>) -> f32 {
+    if use_naadf_for_query(NAADF_QUERY_TERRAIN_AO) {
+        let n = normalize(normal);
+        let tangent_seed = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(n.y) > 0.8);
+        let tangent = normalize(cross(tangent_seed, n));
+        let bitangent = normalize(cross(n, tangent));
+        let origin = world_pos + n * params.normal_bias;
+        var visibility = 0.0;
+
+        visibility += naadf_terrain_ao_visibility_world(
+            origin,
+            n,
+            NAADF_TERRAIN_AO_DISTANCE,
+            NAADF_SHORT_RANGE_STEPS,
+            naadf_chunk_count(),
+            naadf_chunk_lookup_count(),
+        );
+        visibility += naadf_terrain_ao_visibility_world(
+            origin,
+            normalize(n + tangent * 0.75),
+            NAADF_TERRAIN_AO_DISTANCE,
+            NAADF_SHORT_RANGE_STEPS,
+            naadf_chunk_count(),
+            naadf_chunk_lookup_count(),
+        );
+        visibility += naadf_terrain_ao_visibility_world(
+            origin,
+            normalize(n - tangent * 0.75),
+            NAADF_TERRAIN_AO_DISTANCE,
+            NAADF_SHORT_RANGE_STEPS,
+            naadf_chunk_count(),
+            naadf_chunk_lookup_count(),
+        );
+        visibility += naadf_terrain_ao_visibility_world(
+            origin,
+            normalize(n + bitangent * 0.75),
+            NAADF_TERRAIN_AO_DISTANCE,
+            NAADF_SHORT_RANGE_STEPS,
+            naadf_chunk_count(),
+            naadf_chunk_lookup_count(),
+        );
+
+        return saturate(visibility * 0.25);
+    }
+    return terrain_ao_sdf(world_pos);
+}
+
+fn contact_shadow_sdf(origin: vec3<f32>, light_direction: vec3<f32>) -> f32 {
+    return soft_shadow_sdf(origin, light_direction, NAADF_CONTACT_SHADOW_DISTANCE, 8.0);
+}
+
+fn contact_shadow_backend(world_pos: vec3<f32>, normal: vec3<f32>, light_direction: vec3<f32>) -> f32 {
+    let n = normalize(normal);
+    let origin = world_pos + n * params.normal_bias;
+    if use_naadf_for_query(NAADF_QUERY_CONTACT_SHADOW) {
+        return naadf_contact_shadow_visibility_world(
+            origin,
+            light_direction,
+            NAADF_CONTACT_SHADOW_DISTANCE,
+            NAADF_SHORT_RANGE_STEPS,
+            naadf_chunk_count(),
+            naadf_chunk_lookup_count(),
+        );
+    }
+    return contact_shadow_sdf(origin, light_direction);
 }
 
 // ============================================================================
@@ -224,11 +371,25 @@ fn get_probe_position(cascade_level: u32, probe_index: vec2<u32>, screen_size: v
     return vec2<f32>(probe_index) * cascade_spacing;
 }
 
+fn uv_to_ndc(uv: vec2<f32>) -> vec2<f32> {
+    return uv * vec2<f32>(2.0, -2.0) + vec2<f32>(-1.0, 1.0);
+}
+
+fn is_sky_depth(depth: f32) -> bool {
+    return depth <= 0.001;
+}
+
 /// Reconstruct world position from depth
 fn reconstruct_world_position(uv: vec2<f32>, depth: f32) -> vec3<f32> {
-    let ndc = vec4<f32>(uv * 2.0 - 1.0, depth, 1.0);
+    let ndc = vec4<f32>(uv_to_ndc(uv), depth, 1.0);
     let world_h = params.inv_view_proj * ndc;
     return world_h.xyz / world_h.w;
+}
+
+fn depth_at_uv(uv: vec2<f32>) -> f32 {
+    let dims = vec2<i32>(textureDimensions(gbuffer_depth));
+    let pixel = clamp(vec2<i32>(uv * vec2<f32>(dims)), vec2<i32>(0), dims - vec2<i32>(1));
+    return textureLoad(gbuffer_depth, pixel, 0);
 }
 
 // ============================================================================
@@ -259,12 +420,44 @@ fn compute_direct_lighting(pos: vec3<f32>, normal: vec3<f32>, albedo: vec3<f32>)
     let n_dot_l = max(dot(normal, params.sun_direction), 0.0);
     
     // Shadow ray
-    let shadow = soft_shadow_sdf(pos + normal * params.normal_bias, params.sun_direction, 100.0, 16.0);
+    let shadow = soft_shadow_backend(pos + normal * params.normal_bias, params.sun_direction, 100.0, 16.0);
     
     // Direct sun
     let direct = params.sun_color * params.sun_intensity * n_dot_l * shadow;
     
     return albedo * direct;
+}
+
+fn radiance_secondary_gi(world_pos: vec3<f32>, normal: vec3<f32>, albedo: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
+    if !use_naadf_for_query(NAADF_QUERY_GI_SECONDARY) {
+        return vec3<f32>(0.0);
+    }
+
+    let screen_size = vec2<f32>(textureDimensions(gbuffer_depth));
+    let pixel = floor(uv * screen_size);
+    let jitter = fract(
+        dot(pixel, vec2<f32>(0.06711056, 0.00583715)) +
+        f32(params.frame_index) * 0.61803398875
+    );
+    let origin = world_pos + normal * params.normal_bias;
+    var total = vec3<f32>(0.0);
+    var weight_sum = 0.0;
+
+    for (var i = 0u; i < NAADF_GI_SECONDARY_SAMPLES; i = i + 1u) {
+        let dir = get_ray_direction(i, NAADF_GI_SECONDARY_SAMPLES, jitter);
+        let hemisphere_dir = normalize(dir + normal);
+        let n_dot_d = max(dot(hemisphere_dir, normal), 0.0);
+        if n_dot_d > 0.0 {
+            total += trace_probe_ray(origin, hemisphere_dir, 0u) * n_dot_d;
+            weight_sum += n_dot_d;
+        }
+    }
+
+    if weight_sum <= 0.0 {
+        return vec3<f32>(0.0);
+    }
+
+    return total / weight_sum * albedo * params.bounce_intensity;
 }
 
 // ============================================================================
@@ -315,7 +508,7 @@ fn trace_probe_ray(
 ) -> vec3<f32> {
     let max_dist = params.max_ray_distance * pow(CASCADE_SCALE, f32(cascade_level));
     
-    let hit = sphere_trace(origin, direction, max_dist);
+    let hit = trace_gi_backend(origin, direction, max_dist, NAADF_QUERY_GI_SECONDARY);
     
     if hit.hit {
         // Hit geometry - compute lighting at hit point
@@ -377,7 +570,50 @@ fn compute_probe_radiance(
 
 /// Cascade update pass - updates one cascade level
 @fragment
-fn update_cascade(in: VertexOutput) -> @location(0) vec4<f32> {
+fn radiance_passthrough(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
+    let scene = textureSample(gbuffer_albedo, linear_sampler, in.uv);
+    return vec4<f32>(scene.rgb, 1.0);
+}
+
+@fragment
+fn radiance_sun_visibility(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
+    let uv = in.uv;
+    let scene = textureSample(gbuffer_albedo, linear_sampler, uv);
+    let depth = depth_at_uv(uv);
+    if is_sky_depth(depth) {
+        return vec4<f32>(scene.rgb, 1.0);
+    }
+
+    let world_pos = reconstruct_world_position(uv, depth);
+    let normal = normalize(textureSample(gbuffer_normal, linear_sampler, uv).xyz * 2.0 - 1.0);
+    let n_dot_l = max(dot(normal, params.sun_direction), 0.0);
+    var direct_shadow = 1.0;
+    if use_naadf_for_query(NAADF_QUERY_SUN_VISIBILITY) {
+        let visibility = soft_shadow_backend(
+            world_pos + normal * params.normal_bias,
+            params.sun_direction,
+            100.0,
+            16.0,
+        );
+        direct_shadow *= mix(1.0, visibility, n_dot_l * 0.35);
+    }
+    if use_naadf_for_query(NAADF_QUERY_CONTACT_SHADOW) {
+        let contact_shadow = contact_shadow_backend(world_pos, normal, params.sun_direction);
+        direct_shadow *= mix(1.0, contact_shadow, n_dot_l * 0.5);
+    }
+
+    var ao_factor = 1.0;
+    if use_naadf_for_query(NAADF_QUERY_TERRAIN_AO) {
+        let ao = terrain_ao_backend(world_pos, normal);
+        ao_factor = mix(1.0, ao, params.ambient_occlusion_strength);
+    }
+    let secondary_gi = radiance_secondary_gi(world_pos, normal, scene.rgb, uv);
+
+    return vec4(scene.rgb * direct_shadow * ao_factor + secondary_gi, 1.0);
+}
+
+@fragment
+fn update_cascade(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let uv = in.uv;
     let screen_size = vec2<f32>(textureDimensions(gbuffer_depth));
     
@@ -386,8 +622,8 @@ fn update_cascade(in: VertexOutput) -> @location(0) vec4<f32> {
     let noise = textureSample(blue_noise, linear_sampler, noise_uv).r;
     
     // Sample G-buffer
-    let depth = textureSample(gbuffer_depth, linear_sampler, uv).r;
-    if depth >= 1.0 {
+    let depth = depth_at_uv(uv);
+    if is_sky_depth(depth) {
         // Sky pixel
         return vec4<f32>(0.0);
     }
@@ -406,13 +642,13 @@ fn update_cascade(in: VertexOutput) -> @location(0) vec4<f32> {
 
 /// Final composite pass - applies GI to scene
 @fragment
-fn composite_gi(in: VertexOutput) -> @location(0) vec4<f32> {
+fn composite_gi(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let uv = in.uv;
     
     // Sample G-buffer
-    let depth = textureSample(gbuffer_depth, linear_sampler, uv).r;
-    if depth >= 1.0 {
-        discard;
+    let depth = depth_at_uv(uv);
+    if is_sky_depth(depth) {
+        return vec4<f32>(0.0, 0.0, 0.0, 1.0);
     }
     
     let world_pos = reconstruct_world_position(uv, depth);
@@ -426,7 +662,7 @@ fn composite_gi(in: VertexOutput) -> @location(0) vec4<f32> {
     var gi_contribution = indirect * albedo * params.gi_intensity;
     
     // Add ambient occlusion from SDF
-    let ao = saturate(sample_sdf_smooth(world_pos) * 2.0 + 0.5);
+    let ao = terrain_ao_backend(world_pos, normal);
     gi_contribution *= mix(1.0, ao, params.ambient_occlusion_strength);
     
     // Temporal blend with history

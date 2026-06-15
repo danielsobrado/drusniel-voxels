@@ -6,1358 +6,783 @@
 //! - Mesh generation and update systems
 //! - Async chunk generation using Bevy's task pool
 
+#[cfg(test)]
+use std::collections::{HashMap, HashSet};
+#[cfg(test)]
 use std::sync::Arc;
-use std::time::Instant;
 
 use bevy::diagnostic::FrameCount;
 use bevy::prelude::*;
-use bevy::tasks::{block_on, poll_once, AsyncComputeTaskPool, Task};
+use bevy::render::extract_component::ExtractComponentPlugin;
 
-use crate::camera::controller::PlayerCamera;
-use crate::performance::{AreaTimingRecorder, area_timer};
+#[cfg(test)]
 use crate::constants::{
-    BEDROCK_DEPTH, CHUNK_SIZE, CHUNK_SIZE_F32, CHUNK_SIZE_I32,
-    // LOD
-    DEFAULT_HIGH_DETAIL_DISTANCE, DEFAULT_CULL_DISTANCE,
-    INTEGRATED_GPU_HIGH_DETAIL_DISTANCE, INTEGRATED_GPU_CULL_DISTANCE,
-    LOD_HYSTERESIS,
-    WATER_FANCY_DISTANCE, WATER_FANCY_HYSTERESIS, WATER_MATERIAL_UPDATE_INTERVAL,
-    WATER_FANCY_MIN_TRIANGLES, WATER_FANCY_MIN_DEPTH,
+    CHUNK_SIZE, CHUNK_SIZE_I32, WATER_FANCY_DISTANCE, WATER_FANCY_MIN_TRIANGLES, WATER_LEVEL,
 };
+use crate::constants::{DEFAULT_WORLD_CHUNKS_X, DEFAULT_WORLD_CHUNKS_Y, DEFAULT_WORLD_CHUNKS_Z};
+use crate::performance::AreaTimingRecorder;
 
-/// Maximum number of chunks to mesh per frame to prevent frame spikes.
-/// This throttles mesh generation during heavy updates (e.g., initial load, LOD transitions).
-const MAX_CHUNKS_PER_FRAME: usize = 16;
-use crate::physics::NeedsCollider;
-use crate::rendering::capabilities::GraphicsCapabilities;
-use crate::rendering::materials::{VoxelMaterial, WaterMaterial};
-use crate::rendering::triplanar_material::TriplanarMaterialHandle;
-use crate::rendering::AmbientOcclusionConfig;
-use crate::voxel::chunk::{Chunk, ChunkUniformity, LodLevel};
-use crate::voxel::meshing::{
-    generate_chunk_mesh_with_mode, MeshMode, MeshSettings, WaterMesh, WaterMeshDetail,
+#[cfg(test)]
+use crate::rendering::quality::RenderQualityPreset;
+#[cfg(test)]
+use crate::rendering::triplanar_material::TerrainMaterialQuality;
+#[cfg(test)]
+use crate::voxel::chunk::{Chunk, LodLevel, MeshDirtyReason};
+use crate::voxel::diagnostics::seam_audit_pass::SeamAuditPassPlugin;
+use crate::voxel::enclosure::{
+    EnclosureOcclusionStats, EnclosureState, toggle_enclosure_culling, update_enclosure_state,
 };
+use crate::voxel::hole_probe::TerrainHoleProbePlugin;
+#[allow(unused_imports)]
+pub(crate) use crate::voxel::lod::{
+    LodSettings, build_terrain_neighbor_lods, chunk_contains_liquid,
+    chunk_layer_intersects_waterline, collect_water_shore_lod_guard_chunks,
+    effective_terrain_mesh_lod_for_chunk, forensics_mesh_mode_override, is_horizon_proxy_lod,
+    resolve_terrain_mesh_mode, should_defer_surface_nets_mesh, target_terrain_mesh_mode_for_lod,
+    terrain_lod_distance_xz, terrain_lod_hysteresis, terrain_lod_requires_collider,
+    terrain_material_quality_for_lod,
+};
+use crate::voxel::mc_transvoxel::{McTransvoxelRuntimeStats, McTransvoxelSettings};
+use crate::voxel::mesh_commit::LodMeshTransactionState;
+#[cfg(test)]
+use crate::voxel::mesh_commit::MAX_LOD_TRANSACTION_CHUNKS_PER_FRAME;
+use crate::voxel::meshing::{ChunkMesh, MeshMode, MeshSettings, WaterMesh, WaterMeshDetail};
+#[cfg(test)]
+use crate::voxel::meshing::{WaterBodyKind, WaterBodyMaterialMode};
 use crate::voxel::occlusion::{
-    update_visible_chunks_system, OcclusionConfig, OcclusionUpdateTimer, VisibleChunks,
+    OcclusionConfig, OcclusionUpdateTimer, VisibleChunks, update_visible_chunks_system,
 };
-use crate::voxel::octree::ChunkOctree;
-use crate::voxel::persistence::{self, WorldPersistence};
-use crate::voxel::skirt::{NeighborLods, SkirtConfig};
+use crate::voxel::persistence::WorldPersistence;
+#[cfg(test)]
 use crate::voxel::terrain::TerrainGenerator;
-use crate::voxel::types::{VoxelType, Voxel};
-use crate::voxel::visibility::compute_face_visibility;
-use crate::voxel::world::VoxelWorld;
-use bevy_water::water::material::StandardWaterMaterial;
+use crate::voxel::world::{VoxelWorld, WorldBounds};
+
+pub use crate::voxel::runtime::{
+    ChunkGenerationState, RuntimeChunkStats, TerrainLodControl, VoxelTerrainSet, WaterBodyInfo,
+    WaterBodyRegistry, WorldConfig, apply_visibility_culling_system,
+};
+#[cfg(test)]
+use crate::voxel::runtime::{MAX_CHUNKS_PER_FRAME, MAX_STARTUP_CHUNKS_PER_FRAME};
+pub(crate) use crate::voxel::runtime::{
+    MeshDirtyQueueWarningState, PendingWorldGeneration, TerrainLodTransitionState, WaterMaskProxy,
+    WorldGenerationQueue, WorldStartupLoadingFlames, WorldStartupOverlayState,
+    WorldStartupSetupState, adjust_lod_for_integrated_gpu, draw_water_body_debug_overlay,
+    log_mc_spike_build_tag, mesh_dirty_chunks_system, poll_chunk_generation_tasks,
+    poll_world_load_task, spawn_queued_chunk_generation_tasks, spawn_world_startup_overlay,
+    start_pending_world_generation, start_voxel_world_after_overlay_frame,
+    update_chunk_face_visibility_system, update_chunk_lod_system, update_terrain_material_lod,
+    update_water_body_registry, update_water_material_lod, update_world_startup_background_cover,
+    update_world_startup_overlay,
+};
+#[cfg(test)]
+use crate::voxel::runtime::{
+    MeshDirtyReasonCounts, WaterMeshBodySample, WorldStartupStage, WorldStats,
+    build_water_body_group, chunks_per_frame_limit_for_dirty_meshes, desired_water_visibility,
+    expected_world_chunk_count, generate_chunk_async, initial_lod_for_chunk,
+    mark_surface_nets_halo_dirty, prioritize_dirty_chunks_for_camera,
+    should_defer_runtime_chunk_stats_recompute, should_force_initial_runtime_chunk_stats,
+    should_poll_chunk_generation_tasks, should_recompute_runtime_chunk_stats,
+    terrain_material_quality_for_distance, water_body_edge_bit, water_body_material_mode,
+    world_startup_background_cover_size, world_startup_snapshot,
+};
 
 pub struct VoxelPlugin;
 
-#[derive(Resource)]
-pub struct WorldConfig {
-    pub size_chunks: IVec3,
-    pub chunk_size: i32,
-    pub greedy_meshing: bool,
-}
-
-#[derive(Resource, Clone, Copy, Debug)]
-pub struct LodSettings {
-    /// Distance in world units for high detail meshing (Surface Nets by default).
-    pub high_detail_distance: f32,
-    /// Distance in world units at which chunks are culled entirely.
-    pub cull_distance: f32,
-    /// Mesh mode to use for far chunks that are still visible.
-    pub low_detail_mode: MeshMode,
-}
-
-impl Default for LodSettings {
-    fn default() -> Self {
-        Self {
-            high_detail_distance: DEFAULT_HIGH_DETAIL_DISTANCE,
-            cull_distance: DEFAULT_CULL_DISTANCE,
-            // Use Surface Nets for low LOD too - eliminates harsh visual transition
-            // between smooth terrain and blocky chunks at LOD boundaries
-            low_detail_mode: MeshMode::SurfaceNets,
-        }
-    }
-}
-
-/// Runtime chunk statistics for debug overlay and performance monitoring.
-///
-/// This resource tracks chunk counts by uniformity type, mesh entities,
-/// and per-frame statistics for the debug overlay (F3).
-#[derive(Resource, Default, Debug)]
-pub struct RuntimeChunkStats {
-    // Total chunk counts by uniformity
-    pub total_chunks: u32,
-    pub empty_chunks: u32,
-    pub solid_chunks: u32,
-    pub mixed_chunks: u32,
-
-    // Mesh statistics
-    pub mesh_entities: u32,
-    pub water_mesh_entities: u32,
-
-    // Per-frame statistics (reset each frame in the meshing system)
-    pub chunks_meshed_this_frame: u32,
-    pub chunks_skipped_this_frame: u32,
-
-    // LOD statistics
-    pub high_lod_chunks: u32,
-    pub low_lod_chunks: u32,
-    pub culled_chunks: u32,
-
-    // Vertex count statistics (for measuring LOD effectiveness)
-    pub high_lod_vertices: u64,
-    pub low_lod_vertices: u64,
-    pub total_vertices: u64,
-
-    // Chunk counts for averaging (how many chunks contributed to vertex counts)
-    pub high_lod_mesh_count: u32,
-    pub low_lod_mesh_count: u32,
-
-    // Per-frame meshing time tracking (microseconds)
-    pub meshing_time_us: u64,
-}
-
-impl RuntimeChunkStats {
-    /// Recompute all statistics from the world state.
-    pub fn recompute_from_world(&mut self, world: &VoxelWorld) {
-        self.total_chunks = 0;
-        self.empty_chunks = 0;
-        self.solid_chunks = 0;
-        self.mixed_chunks = 0;
-        self.mesh_entities = 0;
-        self.water_mesh_entities = 0;
-        self.high_lod_chunks = 0;
-        self.low_lod_chunks = 0;
-        self.culled_chunks = 0;
-        // Note: vertex counts are tracked during mesh generation, not here
-
-        for (_, chunk) in world.chunk_entries() {
-            self.total_chunks += 1;
-
-            match chunk.uniformity() {
-                ChunkUniformity::Empty => self.empty_chunks += 1,
-                ChunkUniformity::Solid => self.solid_chunks += 1,
-                ChunkUniformity::Mixed => self.mixed_chunks += 1,
-                ChunkUniformity::Unknown => {} // Count as mixed for display purposes
-            }
-
-            if chunk.mesh_entity().is_some() {
-                self.mesh_entities += 1;
-            }
-            if chunk.water_mesh_entity().is_some() {
-                self.water_mesh_entities += 1;
-            }
-
-            match chunk.lod_level() {
-                LodLevel::Lod0 => self.high_lod_chunks += 1,
-                LodLevel::Lod1 | LodLevel::Lod2 | LodLevel::Lod3 => self.low_lod_chunks += 1,
-                LodLevel::Culled => self.culled_chunks += 1,
-            }
-        }
-    }
-
-    /// Reset per-frame counters.
-    pub fn reset_frame_counters(&mut self) {
-        self.chunks_meshed_this_frame = 0;
-        self.chunks_skipped_this_frame = 0;
-        self.meshing_time_us = 0;
-    }
-
-    /// Reset vertex count statistics (called when recomputing all stats).
-    pub fn reset_vertex_counts(&mut self) {
-        self.high_lod_vertices = 0;
-        self.low_lod_vertices = 0;
-        self.total_vertices = 0;
-        self.high_lod_mesh_count = 0;
-        self.low_lod_mesh_count = 0;
-    }
-
-    /// Add vertex count for a mesh at a given LOD level.
-    pub fn add_mesh_vertices(&mut self, vertex_count: u32, lod_level: LodLevel) {
-        // Only count non-empty meshes for averaging
-        if vertex_count == 0 {
-            return;
-        }
-        let count = vertex_count as u64;
-        self.total_vertices += count;
-        match lod_level {
-            LodLevel::Lod0 => {
-                self.high_lod_vertices += count;
-                self.high_lod_mesh_count += 1;
-            }
-            LodLevel::Lod1 | LodLevel::Lod2 | LodLevel::Lod3 => {
-                self.low_lod_vertices += count;
-                self.low_lod_mesh_count += 1;
-            }
-            LodLevel::Culled => {} // No vertices for culled chunks
-        }
-    }
-
-    /// Get average vertices per chunk for high LOD meshes.
-    pub fn avg_high_lod_vertices(&self) -> u32 {
-        if self.high_lod_mesh_count > 0 {
-            (self.high_lod_vertices / self.high_lod_mesh_count as u64) as u32
-        } else {
-            0
-        }
-    }
-
-    /// Get average vertices per chunk for low LOD meshes.
-    pub fn avg_low_lod_vertices(&self) -> u32 {
-        if self.low_lod_mesh_count > 0 {
-            (self.low_lod_vertices / self.low_lod_mesh_count as u64) as u32
-        } else {
-            0
-        }
-    }
-
-    /// Get LOD reduction ratio (0.0 to 1.0, lower = more reduction).
-    pub fn lod_reduction_ratio(&self) -> f32 {
-        let hi_avg = self.avg_high_lod_vertices();
-        let lo_avg = self.avg_low_lod_vertices();
-        if hi_avg > 0 && lo_avg > 0 {
-            lo_avg as f32 / hi_avg as f32
-        } else {
-            1.0 // No data, assume no reduction
-        }
-    }
-}
-
-// =============================================================================
-// Async Chunk Generation
-// =============================================================================
-
-/// Result of async chunk generation task.
-struct ChunkGenerationResult {
-    chunk: Chunk,
-    stats: ChunkStats,
-}
-
-/// Tracks the state of async world generation.
-#[derive(Resource)]
-pub struct ChunkGenerationState {
-    /// Total number of chunks to generate.
-    pub total_chunks: u32,
-    /// Number of chunks that have completed generation.
-    pub chunks_completed: u32,
-    /// Whether generation is complete.
-    pub is_complete: bool,
-    /// Whether we're loading from disk (not generating).
-    pub loading_from_disk: bool,
-    /// Accumulated world stats during generation.
-    world_stats: WorldStats,
-    /// Time when generation started.
-    start_time: Option<std::time::Instant>,
-}
-
-impl Default for ChunkGenerationState {
-    fn default() -> Self {
-        Self {
-            total_chunks: 0,
-            chunks_completed: 0,
-            is_complete: true, // Default to complete (no generation needed)
-            loading_from_disk: false,
-            world_stats: WorldStats::default(),
-            start_time: None,
-        }
-    }
-}
-
-impl ChunkGenerationState {
-    /// Returns the generation progress as a percentage (0.0 to 1.0).
-    pub fn progress(&self) -> f32 {
-        if self.total_chunks == 0 {
-            return 1.0;
-        }
-        self.chunks_completed as f32 / self.total_chunks as f32
-    }
-
-    /// Returns true if generation is in progress.
-    pub fn is_generating(&self) -> bool {
-        !self.is_complete && !self.loading_from_disk
-    }
-}
-
-/// Component to hold a pending chunk generation task.
-#[derive(Component)]
-struct ChunkGenerationTask {
-    task: Task<ChunkGenerationResult>,
-    chunk_pos: IVec3,
-}
-
 impl Plugin for VoxelPlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins((
+            ExtractComponentPlugin::<ChunkMesh>::default(),
+            ExtractComponentPlugin::<WaterMesh>::default(),
+            ExtractComponentPlugin::<WaterMeshDetail>::default(),
+            TerrainHoleProbePlugin,
+            SeamAuditPassPlugin,
+            crate::voxel::pages::ClodPagesPlugin,
+        ));
+
+        let size_chunks = IVec3::new(
+            DEFAULT_WORLD_CHUNKS_X,
+            DEFAULT_WORLD_CHUNKS_Y,
+            DEFAULT_WORLD_CHUNKS_Z,
+        );
+
         app.insert_resource(WorldConfig {
-            size_chunks: IVec3::new(32, 4, 32),
+            size_chunks,
             chunk_size: 16,
             greedy_meshing: true,
         })
-        .insert_resource(VoxelWorld::new(IVec3::new(32, 4, 32)))
+        .insert_resource(WorldBounds::from_size_chunks(size_chunks))
+        .insert_resource(VoxelWorld::new(size_chunks))
         // Use SurfaceNets for smooth terrain meshing (change to Blocky for Minecraft-style)
         .insert_resource(MeshSettings {
             mode: MeshMode::SurfaceNets,
+            ..default()
         })
         .insert_resource(LodSettings::default())
-        .insert_resource(SkirtConfig::default())
+        .insert_resource(crate::voxel::terrain_debug::TerrainDebugView::default())
+        .insert_resource(crate::voxel::terrain_debug::TerrainProbeNotice::default())
+        .insert_resource(McTransvoxelSettings::load_or_default())
+        .insert_resource(McTransvoxelRuntimeStats::default())
+        .insert_resource(TerrainLodControl::default())
+        .insert_resource(TerrainLodTransitionState::default())
+        .insert_resource(LodMeshTransactionState::default())
+        .insert_resource(MeshDirtyQueueWarningState::default())
         // Runtime chunk statistics for debug overlay
         .insert_resource(RuntimeChunkStats::default())
+        .insert_resource(WaterBodyRegistry::default())
         // Async chunk generation state
         .insert_resource(ChunkGenerationState::default())
+        .insert_resource(WorldStartupOverlayState::default())
+        .insert_resource(WorldStartupLoadingFlames::default())
+        .insert_resource(WorldStartupSetupState::default())
+        .insert_resource(PendingWorldGeneration::default())
+        .insert_resource(WorldGenerationQueue::default())
         // World persistence settings (set force_regenerate to true to regenerate)
         .insert_resource(WorldPersistence {
             force_regenerate: false,
             ..default()
         })
         // Visibility optimization resources
-        .insert_resource(ChunkOctree::default())
         .insert_resource(VisibleChunks::default())
-        .insert_resource(OcclusionConfig::default())
+        .insert_resource(EnclosureState::default())
+        .insert_resource(EnclosureOcclusionStats::default())
+        // Enclosure detection activates this at runtime only when the player is indoors or underground.
+        .insert_resource(OcclusionConfig::load_or_default())
         .insert_resource(OcclusionUpdateTimer::default())
-        .add_systems(Startup, setup_voxel_world)
+        .configure_sets(
+            Update,
+            (
+                VoxelTerrainSet::GeneratedChunks,
+                VoxelTerrainSet::NaadfDirtyQueue,
+                VoxelTerrainSet::MeshDirty,
+            )
+                .chain(),
+        )
+        .add_systems(Startup, spawn_world_startup_overlay)
+        .add_systems(Startup, log_mc_spike_build_tag)
+        .add_systems(
+            Update,
+            start_voxel_world_after_overlay_frame.before(poll_world_load_task),
+        )
         .add_systems(
             Update,
             (
-                poll_chunk_generation_tasks,
-                update_chunk_face_visibility_system,
-                update_octree_system,
-                update_visible_chunks_system,
-                adjust_lod_for_integrated_gpu,
-                apply_visibility_culling_system,
-                update_chunk_lod_system,
-                mesh_dirty_chunks_system,
-                update_water_material_lod,
-            )
-                .chain(),
+                poll_world_load_task,
+                start_pending_world_generation.after(poll_world_load_task),
+                spawn_queued_chunk_generation_tasks.after(start_pending_world_generation),
+                // Stage 1: Pull newly-generated chunks into VoxelWorld
+                poll_chunk_generation_tasks
+                    .after(spawn_queued_chunk_generation_tasks)
+                    .in_set(VoxelTerrainSet::GeneratedChunks),
+                update_enclosure_state.after(poll_chunk_generation_tasks),
+                toggle_enclosure_culling,
+                // Stage 2: Face visibility + GPU detection (independent resources, can be parallel)
+                update_chunk_face_visibility_system.after(update_enclosure_state),
+                adjust_lod_for_integrated_gpu.after(poll_chunk_generation_tasks),
+                // Stage 3: BFS occlusion traversal
+                update_visible_chunks_system.after(update_chunk_face_visibility_system),
+                apply_visibility_culling_system.after(update_visible_chunks_system),
+                // Stage 4: LOD per chunk (needs LodSettings from adjust + culling results)
+                update_chunk_lod_system
+                    .after(apply_visibility_culling_system)
+                    .after(adjust_lod_for_integrated_gpu),
+                // Stage 5: Meshing consumes all mesh-dirty producers above. Systems
+                // that create mesh dirtiness later in Update must run before this or
+                // intentionally leave their chunks queued for the next frame.
+                mesh_dirty_chunks_system
+                    .after(update_chunk_lod_system)
+                    .in_set(VoxelTerrainSet::MeshDirty),
+            ),
+        )
+        .add_systems(
+            Update,
+            (
+                // Stage 5b: Water material LOD (independent of meshing, can be parallel)
+                update_water_body_registry.after(mesh_dirty_chunks_system),
+                update_water_material_lod.after(update_water_body_registry),
+                draw_water_body_debug_overlay.after(update_water_body_registry),
+                update_terrain_material_lod.after(update_chunk_lod_system),
+                crate::voxel::terrain_iso_band::update_terrain_iso_band_volume
+                    .after(update_terrain_material_lod),
+                record_voxel_edit_counters,
+                update_world_startup_background_cover,
+                update_world_startup_overlay.after(mesh_dirty_chunks_system),
+            ),
         );
         // .add_plugins(GravityPlugin); // Deactivated due to performance impact
     }
 }
 
-// =============================================================================
-// World Setup
-// =============================================================================
-
-/// Debug flag to generate a flat world for testing. Disabled by default.
-const DEBUG_FLAT_WORLD: bool = false;
-
-/// Attempts to load an existing world from disk.
-///
-/// Returns `true` if loading succeeded, `false` otherwise.
-fn try_load_world(world: &mut VoxelWorld, persistence_settings: &WorldPersistence) -> bool {
-    if persistence_settings.force_regenerate {
-        return false;
-    }
-
-    if !persistence::saved_world_exists() {
-        return false;
-    }
-
-    info!("Loading saved world from disk...");
-    match persistence::load_world() {
-        Ok(loaded_world) => {
-            *world = loaded_world;
-            info!("World loaded successfully!");
-            true
-        }
-        Err(e) => {
-            warn!("Failed to load saved world: {}. Generating new world...", e);
-            false
-        }
-    }
-}
-
-fn enforce_bedrock_floor(world: &mut VoxelWorld) -> bool {
-    let mut changed = false;
-
-    for (chunk_pos, chunk) in world.chunk_entries_mut() {
-        let chunk_min_y = chunk_pos.y * CHUNK_SIZE_I32;
-        let chunk_max_y = chunk_min_y + CHUNK_SIZE_I32 - 1;
-
-        if BEDROCK_DEPTH < chunk_min_y {
-            continue;
-        }
-
-        let max_local_y = if BEDROCK_DEPTH >= chunk_max_y {
-            CHUNK_SIZE_I32 - 1
-        } else {
-            BEDROCK_DEPTH - chunk_min_y
-        };
-
-        if max_local_y < 0 {
-            continue;
-        }
-
-        let mut chunk_changed = false;
-        for x in 0..CHUNK_SIZE {
-            for z in 0..CHUNK_SIZE {
-                for y in 0..=max_local_y as u32 {
-                    let local = UVec3::new(x as u32, y, z as u32);
-                    if chunk.get(local) != VoxelType::Bedrock {
-                        chunk.set(local, VoxelType::Bedrock);
-                        chunk_changed = true;
-                    }
-                }
-            }
-        }
-
-        if chunk_changed {
-            chunk.mark_dirty();
-            changed = true;
-        }
-    }
-
-    changed
-}
-
-/// Statistics for a generated chunk.
-#[derive(Default)]
-struct ChunkStats {
-    sand: u32,
-    dungeon_wall: u32,
-    dungeon_floor: u32,
-    wood: u32,
-    leaves: u32,
-}
-
-/// Aggregate statistics for world generation.
-#[derive(Default)]
-struct WorldStats {
-    total_sand: u32,
-    total_dungeon_wall: u32,
-    total_dungeon_floor: u32,
-    total_wood: u32,
-    total_leaves: u32,
-    // Uniformity statistics
-    empty_chunks: u32,
-    solid_chunks: u32,
-    mixed_chunks: u32,
-}
-
-impl WorldStats {
-    fn add(&mut self, chunk_stats: &ChunkStats, uniformity: ChunkUniformity) {
-        self.total_sand += chunk_stats.sand;
-        self.total_dungeon_wall += chunk_stats.dungeon_wall;
-        self.total_dungeon_floor += chunk_stats.dungeon_floor;
-        self.total_wood += chunk_stats.wood;
-        self.total_leaves += chunk_stats.leaves;
-
-        match uniformity {
-            ChunkUniformity::Empty => self.empty_chunks += 1,
-            ChunkUniformity::Solid => self.solid_chunks += 1,
-            ChunkUniformity::Mixed => self.mixed_chunks += 1,
-            ChunkUniformity::Unknown => {} // Shouldn't happen after compute_uniformity
-        }
-    }
-
-    fn log_summary(&self, generation_time: std::time::Duration) {
-        let total_chunks = self.empty_chunks + self.solid_chunks + self.mixed_chunks;
-        let skippable = self.empty_chunks + self.solid_chunks;
-        let skip_percent = if total_chunks > 0 {
-            (skippable as f32 / total_chunks as f32) * 100.0
-        } else {
-            0.0
-        };
-
-        info!("=== WORLD GENERATION SUMMARY ===");
-        info!("Generation time: {:.2}s", generation_time.as_secs_f32());
-        info!("--- Chunk Uniformity (mesh optimization) ---");
-        info!(
-            "  Empty chunks (all air): {} ({:.1}% of total)",
-            self.empty_chunks,
-            (self.empty_chunks as f32 / total_chunks as f32) * 100.0
-        );
-        info!(
-            "  Solid chunks (no internal surfaces): {} ({:.1}% of total)",
-            self.solid_chunks,
-            (self.solid_chunks as f32 / total_chunks as f32) * 100.0
-        );
-        info!(
-            "  Mixed chunks (need full meshing): {} ({:.1}% of total)",
-            self.mixed_chunks,
-            (self.mixed_chunks as f32 / total_chunks as f32) * 100.0
-        );
-        info!(
-            "  Skippable chunks: {}/{} ({:.1}%)",
-            skippable, total_chunks, skip_percent
-        );
-        info!("--- Block Statistics ---");
-        info!("  Sand blocks: {}", self.total_sand);
-        info!("  Dungeon wall blocks: {}", self.total_dungeon_wall);
-        info!("  Dungeon floor blocks: {}", self.total_dungeon_floor);
-        info!("  Wood blocks: {}", self.total_wood);
-        info!("  Leaves blocks: {}", self.total_leaves);
-    }
-}
-
-/// Saves the world if auto_save is enabled.
-fn try_save_world(world: &VoxelWorld, persistence_settings: &WorldPersistence) {
-    if !persistence_settings.auto_save {
-        return;
-    }
-
-    info!("Saving world to disk...");
-    match persistence::save_world(world) {
-        Ok(()) => info!("World saved successfully!"),
-        Err(e) => warn!("Failed to save world: {}", e),
-    }
-}
-
-/// Main world setup system - spawns async chunk generation tasks.
-fn setup_voxel_world(
-    mut commands: Commands,
-    mut world: ResMut<VoxelWorld>,
-    mut gen_state: ResMut<ChunkGenerationState>,
-    persistence_settings: Res<WorldPersistence>,
-) {
-    // Try to load existing world from disk (synchronous, fast)
-    if try_load_world(&mut world, &persistence_settings) {
-        gen_state.loading_from_disk = true;
-        gen_state.is_complete = true;
-        if enforce_bedrock_floor(&mut world) {
-            info!("Enforced bedrock floor at y={}", BEDROCK_DEPTH);
-            try_save_world(&world, &persistence_settings);
-        }
-        return;
-    }
-
-    // Spawn async chunk generation tasks
-    info!("Generating new world (async)...");
-
-    let chunk_positions: Vec<IVec3> = world.all_chunk_positions().collect();
-    let total_chunks = chunk_positions.len() as u32;
-
-    gen_state.total_chunks = total_chunks;
-    gen_state.chunks_completed = 0;
-    gen_state.is_complete = false;
-    gen_state.loading_from_disk = false;
-    gen_state.world_stats = WorldStats::default();
-    gen_state.start_time = Some(std::time::Instant::now());
-
-    // Create a shared terrain generator (Arc for thread safety)
-    let generator = Arc::new(TerrainGenerator::default());
-
-    // Get the async compute task pool
-    let task_pool = AsyncComputeTaskPool::get();
-
-    // Spawn a task for each chunk
-    for chunk_pos in chunk_positions {
-        let generator = Arc::clone(&generator);
-
-        let task = task_pool.spawn(async move {
-            let (chunk, stats) = generate_chunk_async(chunk_pos, &generator);
-            ChunkGenerationResult { chunk, stats }
-        });
-
-        commands.spawn(ChunkGenerationTask { task, chunk_pos });
-    }
-
-    info!(
-        "Spawned {} async chunk generation tasks",
-        total_chunks
-    );
-}
-
-/// Generates a single chunk using the terrain generator (for async execution).
-fn generate_chunk_async(chunk_pos: IVec3, generator: &TerrainGenerator) -> (Chunk, ChunkStats) {
-    let mut chunk = Chunk::new(chunk_pos);
-    let chunk_world_x = chunk_pos.x * CHUNK_SIZE_I32;
-    let chunk_world_z = chunk_pos.z * CHUNK_SIZE_I32;
-    let chunk_world_y = chunk_pos.y * CHUNK_SIZE_I32;
-
-    let mut stats = ChunkStats::default();
-
-    for x in 0..CHUNK_SIZE {
-        for z in 0..CHUNK_SIZE {
-            let world_x = chunk_world_x + x as i32;
-            let world_z = chunk_world_z + z as i32;
-
-            for y in 0..CHUNK_SIZE {
-                let world_y = chunk_world_y + y as i32;
-
-                let voxel = if DEBUG_FLAT_WORLD {
-                    if world_y <= 12 {
-                        VoxelType::TopSoil
-                    } else {
-                        VoxelType::Air
-                    }
-                } else {
-                    generator.get_voxel(world_x, world_y, world_z)
-                };
-
-                // Track statistics
-                match voxel {
-                    VoxelType::Sand => stats.sand += 1,
-                    VoxelType::DungeonWall => stats.dungeon_wall += 1,
-                    VoxelType::DungeonFloor => stats.dungeon_floor += 1,
-                    VoxelType::Wood => stats.wood += 1,
-                    VoxelType::Leaves => stats.leaves += 1,
-                    _ => {}
-                }
-
-                chunk.set(UVec3::new(x as u32, y as u32, z as u32), voxel);
-            }
-        }
-    }
-
-    chunk.mark_dirty();
-    // Compute uniformity eagerly to enable skipping empty/solid chunks during meshing
-    chunk.compute_uniformity();
-    (chunk, stats)
-}
-
-/// Polls completed chunk generation tasks and inserts chunks into the world.
-fn poll_chunk_generation_tasks(
-    mut commands: Commands,
-    mut world: ResMut<VoxelWorld>,
-    mut gen_state: ResMut<ChunkGenerationState>,
-    mut tasks: Query<(Entity, &mut ChunkGenerationTask)>,
-    persistence_settings: Res<WorldPersistence>,
-) {
-    // Skip if generation is already complete
-    if gen_state.is_complete {
-        return;
-    }
-
-    // Poll all pending tasks
-    let mut completed_count = 0u32;
-
-    for (entity, mut task) in tasks.iter_mut() {
-        if let Some(result) = block_on(poll_once(&mut task.task)) {
-            // Task completed - insert chunk into world
-            let chunk_pos = task.chunk_pos;
-            let uniformity = result.chunk.uniformity();
-
-            // Log chunks with dungeon content
-            if result.stats.dungeon_wall > 0 || result.stats.dungeon_floor > 0 {
-                let chunk_world = IVec3::new(
-                    chunk_pos.x * CHUNK_SIZE_I32,
-                    chunk_pos.y * CHUNK_SIZE_I32,
-                    chunk_pos.z * CHUNK_SIZE_I32,
-                );
-                debug!(
-                    "Chunk {:?} (world {:?}): {} dungeon walls, {} floors",
-                    chunk_pos, chunk_world, result.stats.dungeon_wall, result.stats.dungeon_floor
-                );
-            }
-
-            // Update stats
-            gen_state.world_stats.add(&result.stats, uniformity);
-
-            // Insert chunk into world
-            world.insert_chunk(result.chunk);
-
-            // Despawn the task entity
-            commands.entity(entity).despawn();
-
-            completed_count += 1;
-        }
-    }
-
-    gen_state.chunks_completed += completed_count;
-
-    // Log progress periodically (every 10%)
-    if completed_count > 0 {
-        let progress_pct = (gen_state.progress() * 100.0) as u32;
-        let prev_progress_pct =
-            ((gen_state.chunks_completed - completed_count) as f32 / gen_state.total_chunks as f32 * 100.0) as u32;
-
-        // Log at 10% intervals
-        if progress_pct / 10 > prev_progress_pct / 10 {
-            info!(
-                "World generation: {}% ({}/{} chunks)",
-                progress_pct, gen_state.chunks_completed, gen_state.total_chunks
-            );
-        }
-    }
-
-    // Check if generation is complete
-    if gen_state.chunks_completed >= gen_state.total_chunks {
-        gen_state.is_complete = true;
-
-        if let Some(start_time) = gen_state.start_time {
-            gen_state.world_stats.log_summary(start_time.elapsed());
-        }
-
-        // Apply bedrock floor
-        if enforce_bedrock_floor(&mut world) {
-            info!("Enforced bedrock floor at y={}", BEDROCK_DEPTH);
-        }
-
-        // Save world
-        try_save_world(&world, &persistence_settings);
-    }
-}
-
-fn mesh_dirty_chunks_system(
-    mut commands: Commands,
-    mut world: ResMut<VoxelWorld>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    blocky_material: Option<Res<VoxelMaterial>>,
-    triplanar_material: Res<TriplanarMaterialHandle>,
-    water_material: Res<WaterMaterial>,
-    mesh_settings: Res<MeshSettings>,
-    lod_settings: Res<LodSettings>,
-    skirt_config: Res<SkirtConfig>,
-    ao_config: Res<AmbientOcclusionConfig>,
-    mut chunk_stats: ResMut<RuntimeChunkStats>,
-    mut material_logged: Local<bool>,
-    camera_query: Query<&Transform, With<PlayerCamera>>,
+fn record_voxel_edit_counters(
+    world: Res<VoxelWorld>,
     frame: Res<FrameCount>,
     mut timing: ResMut<AreaTimingRecorder>,
 ) {
-    let _timer = area_timer(&mut timing, frame.0, "Chunk Meshing");
-    // Reset per-frame counters
-    chunk_stats.reset_frame_counters();
+    let stats = world.edit_stats();
+    timing.record_count(frame.0, "Voxel Edits Applied", stats.applied as f64);
+    timing.record_count(
+        frame.0,
+        "Voxel Edits Rejected Below Floor",
+        stats.rejected_below_floor as f64,
+    );
+    timing.record_count(
+        frame.0,
+        "Voxel Edits Rejected Bedrock",
+        stats.rejected_unbreakable as f64,
+    );
+    timing.record_count(
+        frame.0,
+        "Voxel Edits Rejected Out Of Bounds",
+        stats.rejected_out_of_bounds as f64,
+    );
+}
 
-    // Wait for blocky material to be loaded before processing chunks.
-    let blocky_material = if let Some(mat) = blocky_material {
-        if !*material_logged {
-            debug!("Blocky material loaded, mesh processing enabled");
-            *material_logged = true;
-        }
-        Some(mat)
-    } else {
-        None
-    };
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    if matches!(mesh_settings.mode, MeshMode::Blocky) && blocky_material.is_none() {
-        // Material not yet loaded - this is expected during startup
-        return;
+    #[test]
+    fn mesh_dirty_queue_warning_is_rate_limited_to_once_per_second() {
+        let mut state = MeshDirtyQueueWarningState::default();
+
+        assert!(state.should_warn(10.0));
+        assert!(!state.should_warn(10.25));
+        assert!(!state.should_warn(10.99));
+        assert!(state.should_warn(11.0));
+        assert!(!state.should_warn(11.5));
+        assert!(state.should_warn(12.01));
     }
 
-    // Collect dirty chunks and sort by distance from camera (nearest first)
-    // This prioritizes meshing chunks close to the player for better visual quality
-    let mut dirty_chunks: Vec<IVec3> = world.dirty_chunks().collect();
-    let had_dirty_chunks = !dirty_chunks.is_empty();
-    let camera_pos = camera_query.single().ok().map(|transform| transform.translation);
-    let fancy_distance_sq = WATER_FANCY_DISTANCE * WATER_FANCY_DISTANCE;
-
-    // Sort by distance to camera if available
-    if let Some(camera_pos) = camera_pos {
-        dirty_chunks.sort_by(|a, b| {
-            let world_a = VoxelWorld::chunk_to_world(*a).as_vec3() + Vec3::splat(CHUNK_SIZE_F32 * 0.5);
-            let world_b = VoxelWorld::chunk_to_world(*b).as_vec3() + Vec3::splat(CHUNK_SIZE_F32 * 0.5);
-            let dist_a = world_a.distance_squared(camera_pos);
-            let dist_b = world_b.distance_squared(camera_pos);
-            dist_a.partial_cmp(&dist_b).unwrap_or(std::cmp::Ordering::Equal)
-        });
+    #[test]
+    fn water_material_visibility_restores_renderable_body_modes() {
+        assert_eq!(
+            desired_water_visibility(false, false, Some(WaterBodyMaterialMode::Hidden)),
+            Visibility::Hidden
+        );
+        assert_eq!(
+            desired_water_visibility(false, false, Some(WaterBodyMaterialMode::Fancy)),
+            Visibility::Inherited
+        );
+        assert_eq!(
+            desired_water_visibility(false, false, Some(WaterBodyMaterialMode::Cheap)),
+            Visibility::Inherited
+        );
+        assert_eq!(
+            desired_water_visibility(false, false, Some(WaterBodyMaterialMode::Unknown)),
+            Visibility::Inherited
+        );
+        assert_eq!(
+            desired_water_visibility(false, false, None),
+            Visibility::Inherited
+        );
     }
-    let mut chunks_meshed = 0u32;
-    let mut chunks_skipped = 0u32;
-    let mut chunks_processed = 0usize;
 
-    for chunk_pos in dirty_chunks {
-        // Throttle: limit chunks meshed per frame to prevent frame spikes
-        if chunks_processed >= MAX_CHUNKS_PER_FRAME {
-            break;
-        }
-        chunks_processed += 1;
-        // Compute uniformity if unknown (lazy evaluation)
-        if let Some(chunk) = world.get_chunk_mut(chunk_pos) {
-            if chunk.uniformity() == ChunkUniformity::Unknown {
-                chunk.compute_uniformity();
+    #[test]
+    fn forced_water_material_modes_override_hidden_visibility() {
+        assert_eq!(
+            desired_water_visibility(true, false, Some(WaterBodyMaterialMode::Hidden)),
+            Visibility::Inherited
+        );
+        assert_eq!(
+            desired_water_visibility(false, true, Some(WaterBodyMaterialMode::Hidden)),
+            Visibility::Inherited
+        );
+    }
+
+    #[test]
+    fn shallow_flood_water_uses_fancy_material_when_near() {
+        assert_eq!(
+            water_body_material_mode(
+                WaterBodyMaterialMode::Unknown,
+                WATER_FANCY_DISTANCE - 1.0,
+                1,
+                WATER_FANCY_MIN_TRIANGLES as f32,
+                WaterBodyKind::ShallowFlood,
+            ),
+            WaterBodyMaterialMode::Fancy
+        );
+    }
+
+    #[test]
+    fn initial_lod_assignment_uses_lod0_without_lod_dirty_reason() {
+        let mut chunk = Chunk::new(IVec3::new(18, 0, 0));
+        let initial_lod = initial_lod_for_chunk();
+
+        assert_eq!(initial_lod, LodLevel::Lod0);
+        chunk.set_initial_lod_level(initial_lod);
+
+        assert_eq!(chunk.lod_level(), initial_lod);
+        assert!(chunk.has_dirty_reason(MeshDirtyReason::Generation));
+        assert!(!chunk.has_dirty_reason(MeshDirtyReason::Lod));
+    }
+
+    #[test]
+    fn initial_lod_assignment_uses_lod0_when_pages_own_far_field() {
+        let initial_lod = initial_lod_for_chunk();
+
+        assert_eq!(initial_lod, LodLevel::Lod0);
+    }
+
+    #[test]
+    fn generated_chunk_marks_face_neighbors_dirty() {
+        let center = IVec3::new(1, 1, 1);
+        let mut world = VoxelWorld::new(IVec3::new(3, 3, 3));
+
+        for z in 0..3 {
+            for y in 0..3 {
+                for x in 0..3 {
+                    let mut chunk = Chunk::new(IVec3::new(x, y, z));
+                    chunk.clear_dirty();
+                    world.insert_chunk(chunk);
+                }
             }
         }
 
-        let (target_mode, lod_level, uniformity) = if let Some(chunk) = world.get_chunk(chunk_pos) {
-            let target_mode = match chunk.lod_level() {
-                LodLevel::Lod0 => mesh_settings.mode,
-                LodLevel::Lod1 | LodLevel::Lod2 | LodLevel::Lod3 => lod_settings.low_detail_mode,
-                LodLevel::Culled => lod_settings.low_detail_mode,
-            };
+        mark_surface_nets_halo_dirty(&mut world, center);
 
-            (target_mode, chunk.lod_level(), chunk.uniformity())
-        } else {
-            continue;
+        let dirty = world.dirty_chunks().collect::<HashSet<_>>();
+        assert_eq!(dirty.len(), 6);
+        assert!(!dirty.contains(&center));
+        assert!(dirty.contains(&(center + IVec3::X)));
+        assert!(dirty.contains(&(center + IVec3::NEG_Y)));
+        assert!(!dirty.contains(&(center + IVec3::new(-1, -1, -1))));
+    }
+
+    #[test]
+    fn world_startup_snapshot_reports_generation_progress() {
+        let gen_state = ChunkGenerationState {
+            total_chunks: 100,
+            chunks_completed: 25,
+            is_complete: false,
+            loading_from_disk: false,
+            world_stats: WorldStats::default(),
+            start_time: None,
+        };
+        let chunk_stats = RuntimeChunkStats::default();
+
+        let snapshot = world_startup_snapshot(&gen_state, &chunk_stats, true, None);
+
+        assert_eq!(snapshot.stage, WorldStartupStage::GeneratingTerrain);
+        assert_eq!(snapshot.progress, 0.225);
+        assert!(snapshot.detail.contains("25 of 100"));
+        assert!(!snapshot.complete);
+    }
+
+    #[test]
+    fn world_startup_snapshot_keeps_loaded_world_visible_until_meshed() {
+        let gen_state = ChunkGenerationState {
+            total_chunks: 100,
+            chunks_completed: 100,
+            is_complete: true,
+            loading_from_disk: true,
+            world_stats: WorldStats::default(),
+            start_time: None,
+        };
+        let mut chunk_stats = RuntimeChunkStats::default();
+
+        let preparing = world_startup_snapshot(&gen_state, &chunk_stats, true, None);
+        assert_eq!(preparing.stage, WorldStartupStage::PreparingMeshes);
+        assert!(!preparing.complete);
+
+        chunk_stats.mesh_entities = 1;
+        let ready = world_startup_snapshot(&gen_state, &chunk_stats, true, None);
+        assert_eq!(ready.stage, WorldStartupStage::Ready);
+        assert!(ready.complete);
+    }
+
+    #[test]
+    fn world_startup_snapshot_waits_for_deferred_surface_nets_halo() {
+        let gen_state = ChunkGenerationState {
+            total_chunks: 100,
+            chunks_completed: 100,
+            is_complete: true,
+            loading_from_disk: false,
+            world_stats: WorldStats::default(),
+            start_time: None,
+        };
+        let chunk_stats = RuntimeChunkStats {
+            mesh_entities: 10,
+            dirty_chunks_queued: 2,
+            surface_nets_chunks_deferred_for_halo: 1,
+            ..Default::default()
         };
 
-        // Skip meshing for culled chunks
-        if lod_level == LodLevel::Culled {
-            if let Some(chunk) = world.get_chunk_mut(chunk_pos) {
-                if let Some(entity) = chunk.mesh_entity() {
-                    commands.entity(entity).despawn();
-                    chunk.clear_mesh_entity();
-                }
-                if let Some(entity) = chunk.water_mesh_entity() {
-                    commands.entity(entity).despawn();
-                    chunk.clear_water_mesh_entity();
-                }
-                chunk.clear_dirty();
-            }
-            chunks_skipped += 1;
-            continue;
-        }
+        let snapshot = world_startup_snapshot(&gen_state, &chunk_stats, true, None);
 
-        // Skip meshing for empty chunks (all air) - no geometry to render
-        if uniformity == ChunkUniformity::Empty {
-            if let Some(chunk) = world.get_chunk_mut(chunk_pos) {
-                if let Some(entity) = chunk.mesh_entity() {
-                    commands.entity(entity).despawn();
-                    chunk.clear_mesh_entity();
-                }
-                if let Some(entity) = chunk.water_mesh_entity() {
-                    commands.entity(entity).despawn();
-                    chunk.clear_water_mesh_entity();
-                }
-                chunk.clear_dirty();
-            }
-            chunks_skipped += 1;
-            continue;
-        }
+        assert_eq!(snapshot.stage, WorldStartupStage::PreparingMeshes);
+        assert!(snapshot.detail.contains("waiting for neighbors"));
+        assert!(!snapshot.complete);
+    }
 
-        let neighbor_lods = NeighborLods {
-            neg_x: world
-                .get_chunk(chunk_pos + IVec3::new(-1, 0, 0))
-                .map(|c| c.lod_level()),
-            pos_x: world
-                .get_chunk(chunk_pos + IVec3::new(1, 0, 0))
-                .map(|c| c.lod_level()),
-            neg_z: world
-                .get_chunk(chunk_pos + IVec3::new(0, 0, -1))
-                .map(|c| c.lod_level()),
-            pos_z: world
-                .get_chunk(chunk_pos + IVec3::new(0, 0, 1))
-                .map(|c| c.lod_level()),
+    #[test]
+    fn world_startup_snapshot_does_not_wait_for_idle_lod_dirty_queue() {
+        let gen_state = ChunkGenerationState {
+            total_chunks: 100,
+            chunks_completed: 100,
+            is_complete: true,
+            loading_from_disk: true,
+            world_stats: WorldStats::default(),
+            start_time: None,
+        };
+        let chunk_stats = RuntimeChunkStats {
+            mesh_entities: 10,
+            dirty_chunks_queued: 300,
+            ..Default::default()
         };
 
-        // Step 1: Generate mesh data using immutable borrow (with timing)
-        let mesh_start = Instant::now();
-        let mesh_result = if let Some(chunk) = world.get_chunk(chunk_pos) {
-            generate_chunk_mesh_with_mode(
-                chunk,
-                &world,
-                target_mode,
-                lod_level,
-                neighbor_lods,
-                &skirt_config,
-                &ao_config.baked,
-            )
-        } else {
-            continue;
+        let snapshot = world_startup_snapshot(&gen_state, &chunk_stats, true, None);
+
+        assert_eq!(snapshot.stage, WorldStartupStage::Ready);
+        assert!(snapshot.complete);
+    }
+
+    #[test]
+    fn world_startup_snapshot_gate_waits_for_pages_and_live_queue() {
+        let gen_state = ChunkGenerationState {
+            total_chunks: 100,
+            chunks_completed: 100,
+            is_complete: true,
+            loading_from_disk: false,
+            world_stats: WorldStats::default(),
+            start_time: None,
         };
-        let mesh_elapsed = mesh_start.elapsed();
+        let mut chunk_stats = RuntimeChunkStats {
+            mesh_entities: 10,
+            ..Default::default()
+        };
+        let mut gate = crate::voxel::pages::ClodPageMeshGate::default();
+        gate.pages_ready = false;
+        gate.pages_pending = true;
 
-        // Track vertex count for this mesh (before it's consumed)
-        let vertex_count = mesh_result.solid.positions.len() as u32;
+        let waiting_pages = world_startup_snapshot(&gen_state, &chunk_stats, true, Some(&gate));
+        assert_eq!(waiting_pages.stage, WorldStartupStage::PreparingMeshes);
+        assert!(waiting_pages.detail.contains("terrain pages"));
 
-        let water_max_depth = if mesh_result.water.is_empty() {
-            0
-        } else {
-            compute_water_max_depth(&world, chunk_pos)
+        gate.pages_pending = false;
+        let missing_fallback = world_startup_snapshot(&gen_state, &chunk_stats, true, Some(&gate));
+        assert_eq!(missing_fallback.stage, WorldStartupStage::Ready);
+        assert!(missing_fallback.complete);
+
+        gate.pages_failed = true;
+        let failed_fallback = world_startup_snapshot(&gen_state, &chunk_stats, true, Some(&gate));
+        assert_eq!(failed_fallback.stage, WorldStartupStage::Ready);
+        assert!(failed_fallback.complete);
+
+        gate.pages_failed = false;
+        gate.pages_ready = true;
+        chunk_stats.dirty_chunks_queued = 2;
+        let waiting_live = world_startup_snapshot(&gen_state, &chunk_stats, true, Some(&gate));
+        assert_eq!(waiting_live.stage, WorldStartupStage::PreparingMeshes);
+        assert!(waiting_live.detail.contains("live terrain meshes"));
+
+        chunk_stats.dirty_chunks_queued = 0;
+        let ready = world_startup_snapshot(&gen_state, &chunk_stats, true, Some(&gate));
+        assert_eq!(ready.stage, WorldStartupStage::Ready);
+        assert!(ready.complete);
+    }
+
+    #[test]
+    fn world_startup_snapshot_waits_for_overlay_before_generation() {
+        let gen_state = ChunkGenerationState::default();
+        let chunk_stats = RuntimeChunkStats::default();
+
+        let snapshot = world_startup_snapshot(&gen_state, &chunk_stats, false, None);
+
+        assert_eq!(snapshot.stage, WorldStartupStage::LoadingSavedWorld);
+        assert!(snapshot.detail.contains("Starting world load"));
+        assert!(!snapshot.complete);
+    }
+
+    #[test]
+    fn chunk_generation_polling_waits_while_saved_world_is_loading() {
+        let gen_state = ChunkGenerationState {
+            total_chunks: 0,
+            chunks_completed: 0,
+            is_complete: false,
+            loading_from_disk: true,
+            world_stats: WorldStats::default(),
+            start_time: Some(std::time::Instant::now()),
         };
 
-        // Step 2: Update chunk state using mutable borrow
-        if let Some(chunk) = world.get_chunk_mut(chunk_pos) {
-            // Clear dirty flag
-            chunk.clear_dirty();
-
-            let world_pos = VoxelWorld::chunk_to_world(chunk_pos);
-            let chunk_center = world_pos.as_vec3() + Vec3::splat(CHUNK_SIZE_F32 * 0.5);
-
-            // Track meshing statistics
-            chunk_stats.meshing_time_us += mesh_elapsed.as_micros() as u64;
-            chunk_stats.add_mesh_vertices(vertex_count, lod_level);
-
-            // Handle solid mesh
-            if mesh_result.solid.is_empty() {
-                if let Some(entity) = chunk.mesh_entity() {
-                    commands.entity(entity).despawn();
-                    chunk.clear_mesh_entity();
-                }
-            } else {
-                let mesh = mesh_result.solid.into_mesh();
-                let mesh_handle = meshes.add(mesh);
-
-                if let Some(entity) = chunk.mesh_entity() {
-                    // Update existing entity with new mesh AND correct material for current mode
-                    match mesh_settings.mode {
-                        MeshMode::Blocky => {
-                            if let Some(blocky_mat) = blocky_material.as_ref() {
-                                commands.entity(entity).insert((
-                                    Mesh3d(mesh_handle),
-                                    MeshMaterial3d(blocky_mat.handle.clone()),
-                                    NeedsCollider,
-                                ));
-                            }
-                        }
-                        MeshMode::SurfaceNets => {
-                            commands.entity(entity).insert((
-                                Mesh3d(mesh_handle),
-                                MeshMaterial3d(triplanar_material.handle.clone()),
-                                NeedsCollider,
-                            ));
-                        }
-                    }
-                } else {
-                    // Spawn with appropriate material based on mesh mode
-                    let entity = match mesh_settings.mode {
-                        MeshMode::Blocky => {
-                            let Some(blocky_material) = blocky_material.as_ref() else {
-                                continue;
-                            };
-                            commands
-                                .spawn((
-                                    Mesh3d(mesh_handle),
-                                    MeshMaterial3d(blocky_material.handle.clone()),
-                                    Transform::from_xyz(
-                                        world_pos.x as f32,
-                                        world_pos.y as f32,
-                                        world_pos.z as f32,
-                                    ),
-                                    crate::voxel::meshing::ChunkMesh {
-                                        chunk_position: chunk_pos,
-                                    },
-                                    NeedsCollider,
-                                ))
-                                .id()
-                        }
-                        MeshMode::SurfaceNets => commands
-                            .spawn((
-                                Mesh3d(mesh_handle),
-                                MeshMaterial3d(triplanar_material.handle.clone()),
-                                Transform::from_xyz(
-                                    world_pos.x as f32,
-                                    world_pos.y as f32,
-                                    world_pos.z as f32,
-                                ),
-                                crate::voxel::meshing::ChunkMesh {
-                                    chunk_position: chunk_pos,
-                                },
-                                NeedsCollider,
-                            ))
-                            .id(),
-                    };
-                    chunk.set_mesh_entity(entity);
-                }
-            }
-
-            // Handle water mesh
-            if mesh_result.water.is_empty() {
-                if let Some(entity) = chunk.water_mesh_entity() {
-                    commands.entity(entity).despawn();
-                    chunk.clear_water_mesh_entity();
-                }
-            } else {
-                let water_triangle_count = mesh_result.water.indices.len() / 3;
-                let allow_fancy_water = water_triangle_count >= WATER_FANCY_MIN_TRIANGLES
-                    && water_max_depth >= WATER_FANCY_MIN_DEPTH;
-                let water_mesh = mesh_result.water.into_mesh();
-                let water_mesh_handle = meshes.add(water_mesh);
-                let use_fancy_water = camera_pos
-                    .map(|pos| chunk_center.distance_squared(pos) <= fancy_distance_sq)
-                    .unwrap_or(true);
-                let use_fancy_water = use_fancy_water && allow_fancy_water;
-
-                if let Some(entity) = chunk.water_mesh_entity() {
-                    let mut entity_cmd = commands.entity(entity);
-                    entity_cmd.insert((
-                        Mesh3d(water_mesh_handle),
-                        WaterMesh,
-                        WaterMeshDetail {
-                            triangle_count: water_triangle_count,
-                            max_depth: water_max_depth,
-                        },
-                    ));
-                    if use_fancy_water {
-                        entity_cmd
-                            .insert(MeshMaterial3d(water_material.near_handle.clone()))
-                            .remove::<MeshMaterial3d<StandardMaterial>>();
-                    } else {
-                        entity_cmd
-                            .insert(MeshMaterial3d(water_material.far_handle.clone()))
-                            .remove::<MeshMaterial3d<StandardWaterMaterial>>();
-                    }
-                } else {
-                    let mut entity_cmd = commands.spawn((
-                        Mesh3d(water_mesh_handle),
-                        Transform::from_xyz(
-                            world_pos.x as f32,
-                            world_pos.y as f32,
-                            world_pos.z as f32,
-                        ),
-                        crate::voxel::meshing::ChunkMesh {
-                            chunk_position: chunk_pos,
-                        },
-                        WaterMesh,
-                        WaterMeshDetail {
-                            triangle_count: water_triangle_count,
-                            max_depth: water_max_depth,
-                        },
-                    ));
-                    if use_fancy_water {
-                        entity_cmd.insert(MeshMaterial3d(water_material.near_handle.clone()));
-                    } else {
-                        entity_cmd.insert(MeshMaterial3d(water_material.far_handle.clone()));
-                    }
-                    let entity = entity_cmd.id();
-                    chunk.set_water_mesh_entity(entity);
-                }
-            }
-
-            chunks_meshed += 1;
-        }
+        assert!(!should_poll_chunk_generation_tasks(&gen_state));
     }
 
-    // Update runtime statistics
-    chunk_stats.chunks_meshed_this_frame = chunks_meshed;
-    chunk_stats.chunks_skipped_this_frame = chunks_skipped;
+    #[test]
+    fn chunk_generation_polling_does_not_complete_empty_startup_state() {
+        let gen_state = ChunkGenerationState {
+            total_chunks: 0,
+            chunks_completed: 0,
+            is_complete: false,
+            loading_from_disk: false,
+            world_stats: WorldStats::default(),
+            start_time: Some(std::time::Instant::now()),
+        };
 
-    // Recompute full stats from world (only if there were dirty chunks to process)
-    if had_dirty_chunks {
-        chunk_stats.recompute_from_world(&world);
-    }
-}
-
-fn update_water_material_lod(
-    time: Res<Time>,
-    camera_query: Query<&Transform, With<PlayerCamera>>,
-    water_material: Res<WaterMaterial>,
-    mut commands: Commands,
-    water_meshes: Query<
-        (
-            Entity,
-            &Transform,
-            Option<&MeshMaterial3d<StandardWaterMaterial>>,
-            Option<&MeshMaterial3d<StandardMaterial>>,
-            Option<&WaterMeshDetail>,
-        ),
-        With<WaterMesh>,
-    >,
-    mut last_update: Local<f32>,
-) {
-    let now = time.elapsed_secs();
-    if now - *last_update < WATER_MATERIAL_UPDATE_INTERVAL {
-        return;
-    }
-    *last_update = now;
-
-    let Ok(camera_transform) = camera_query.single() else {
-        return;
-    };
-
-    let camera_pos = camera_transform.translation;
-    let fancy_in = (WATER_FANCY_DISTANCE - WATER_FANCY_HYSTERESIS).max(0.0);
-    let fancy_out = WATER_FANCY_DISTANCE + WATER_FANCY_HYSTERESIS;
-    let fancy_in_sq = fancy_in * fancy_in;
-    let fancy_out_sq = fancy_out * fancy_out;
-    let fancy_distance_sq = WATER_FANCY_DISTANCE * WATER_FANCY_DISTANCE;
-
-    for (entity, transform, fancy_mat, cheap_mat, detail) in water_meshes.iter() {
-        let allow_fancy_water = detail
-            .map(|detail| {
-                detail.triangle_count >= WATER_FANCY_MIN_TRIANGLES
-                    && detail.max_depth >= WATER_FANCY_MIN_DEPTH
-            })
-            .unwrap_or(true);
-        let chunk_center = transform.translation + Vec3::splat(CHUNK_SIZE_F32 * 0.5);
-        let dist_sq = chunk_center.distance_squared(camera_pos);
-
-        if !allow_fancy_water {
-            if cheap_mat.is_none() {
-                commands
-                    .entity(entity)
-                    .insert(MeshMaterial3d(water_material.far_handle.clone()))
-                    .remove::<MeshMaterial3d<StandardWaterMaterial>>();
-            }
-            continue;
-        }
-
-        if fancy_mat.is_some() {
-            if dist_sq > fancy_out_sq {
-                commands
-                    .entity(entity)
-                    .insert(MeshMaterial3d(water_material.far_handle.clone()))
-                    .remove::<MeshMaterial3d<StandardWaterMaterial>>();
-            }
-        } else if cheap_mat.is_some() {
-            if dist_sq < fancy_in_sq {
-                commands
-                    .entity(entity)
-                    .insert(MeshMaterial3d(water_material.near_handle.clone()))
-                    .remove::<MeshMaterial3d<StandardMaterial>>();
-            }
-        } else {
-            if dist_sq <= fancy_distance_sq {
-                commands
-                    .entity(entity)
-                    .insert(MeshMaterial3d(water_material.near_handle.clone()));
-            } else {
-                commands
-                    .entity(entity)
-                    .insert(MeshMaterial3d(water_material.far_handle.clone()));
-            }
-        }
-    }
-}
-
-fn compute_water_max_depth(world: &VoxelWorld, chunk_pos: IVec3) -> usize {
-    let chunk_origin = VoxelWorld::chunk_to_world(chunk_pos);
-    let mut max_depth = 0usize;
-
-    for x in 0..CHUNK_SIZE_I32 {
-        for z in 0..CHUNK_SIZE_I32 {
-            for y in (0..CHUNK_SIZE_I32).rev() {
-                let world_pos = chunk_origin + IVec3::new(x, y, z);
-                let Some(voxel) = world.get_voxel(world_pos) else {
-                    continue;
-                };
-                if !voxel.is_liquid() {
-                    continue;
-                }
-
-                let above = world.get_voxel(world_pos + IVec3::Y);
-                if matches!(above, Some(v) if v.is_liquid()) {
-                    continue;
-                }
-
-                let mut depth = 1usize;
-                loop {
-                    let below_pos = world_pos - IVec3::Y * depth as i32;
-                    match world.get_voxel(below_pos) {
-                        Some(v) if v.is_liquid() => {
-                            depth += 1;
-                        }
-                        _ => break,
-                    }
-                }
-
-                if depth > max_depth {
-                    max_depth = depth;
-                }
-                break;
-            }
-        }
+        assert!(!should_poll_chunk_generation_tasks(&gen_state));
     }
 
-    max_depth
-}
+    #[test]
+    fn chunk_generation_polling_runs_for_queued_generation() {
+        let gen_state = ChunkGenerationState {
+            total_chunks: 100,
+            chunks_completed: 25,
+            is_complete: false,
+            loading_from_disk: false,
+            world_stats: WorldStats::default(),
+            start_time: Some(std::time::Instant::now()),
+        };
 
-/// Adjusts LOD settings for integrated GPUs to maintain performance.
-///
-/// This system runs once at startup and reduces view distances when an
-/// integrated GPU is detected.
-fn adjust_lod_for_integrated_gpu(
-    capabilities: Option<Res<GraphicsCapabilities>>,
-    mut lod_settings: ResMut<LodSettings>,
-    _mesh_settings: ResMut<MeshSettings>,
-    mut applied: Local<bool>,
-) {
-    if *applied {
-        return;
+        assert!(should_poll_chunk_generation_tasks(&gen_state));
     }
 
-    let Some(capabilities) = capabilities else {
-        return;
-    };
+    #[test]
+    fn world_generation_queue_batches_startup_task_spawns() {
+        let mut queue = WorldGenerationQueue::default();
+        queue.begin(
+            vec![
+                IVec3::new(0, 0, 0),
+                IVec3::new(1, 0, 0),
+                IVec3::new(2, 0, 0),
+                IVec3::new(3, 0, 0),
+                IVec3::new(4, 0, 0),
+            ],
+            Arc::new(TerrainGenerator::default()),
+        );
 
-    if capabilities.adapter_name.is_none() {
-        return;
+        let (first_batch, _, first_complete) = queue.take_next_batch(2).expect("first batch");
+        assert_eq!(first_batch, vec![IVec3::new(0, 0, 0), IVec3::new(1, 0, 0)]);
+        assert!(!first_complete);
+        assert_eq!(queue.remaining(), 3);
+
+        let (second_batch, _, second_complete) = queue.take_next_batch(8).expect("second batch");
+        assert_eq!(
+            second_batch,
+            vec![
+                IVec3::new(2, 0, 0),
+                IVec3::new(3, 0, 0),
+                IVec3::new(4, 0, 0)
+            ]
+        );
+        assert!(second_complete);
+        assert_eq!(queue.remaining(), 0);
+        assert!(queue.take_next_batch(2).is_none());
     }
 
-    if capabilities.integrated_gpu {
-        lod_settings.high_detail_distance = INTEGRATED_GPU_HIGH_DETAIL_DISTANCE;
-        lod_settings.cull_distance = INTEGRATED_GPU_CULL_DISTANCE;
-        lod_settings.low_detail_mode = MeshMode::Blocky;
-        // Keep mesh_settings.mode as SurfaceNets for nearby chunks (V0.3 triplanar PBR look)
-        // Only distant LOD chunks use Blocky mode for performance
-        info!("Integrated GPU detected; using more aggressive LOD distances, keeping SurfaceNets for nearby terrain.");
+    #[test]
+    fn startup_background_cover_size_preserves_aspect_and_overfills_window() {
+        let draw_size = world_startup_background_cover_size(
+            Vec2::new(1920.0, 1080.0),
+            Vec2::new(1024.0, 1024.0),
+            1.1,
+        )
+        .expect("cover size");
+
+        assert!(draw_size.x >= 1920.0);
+        assert!(draw_size.y >= 1080.0);
+        assert!((draw_size.x / draw_size.y - 1.0).abs() < f32::EPSILON);
     }
 
-    *applied = true;
-}
-
-/// Calculates the target LOD level with hysteresis to prevent rapid switching.
-///
-/// Hysteresis means the threshold to switch FROM a level is different than TO it:
-/// - To switch from Lod0 → Lod1: must exceed high_detail_distance + hysteresis
-/// - To switch from Lod1 → Lod0: must be within high_detail_distance - hysteresis
-/// This prevents flip-flopping when camera hovers near a threshold.
-fn calculate_target_lod_with_hysteresis(
-    distance: f32,
-    current_lod: LodLevel,
-    settings: &LodSettings,
-) -> LodLevel {
-    // Distance thresholds for LOD transitions
-    // Lod0: 0 to high_detail_distance
-    // Lod1: high_detail_distance to lod1_distance (midpoint to cull)
-    // Lod2+: lod1_distance to cull_distance
-    let lod1_distance = (settings.high_detail_distance + settings.cull_distance) * 0.5;
-    // Fix: Ensure lod2_distance is between lod1 and cull (midpoint of the remaining range)
-    let lod2_distance = lod1_distance + (settings.cull_distance - lod1_distance) * 0.5;
-
-    match current_lod {
-        LodLevel::Lod0 => {
-            // Currently highest detail - need to go PAST threshold to switch to lower
-            if distance > settings.high_detail_distance + LOD_HYSTERESIS {
-                LodLevel::Lod1
-            } else {
-                LodLevel::Lod0
-            }
-        }
-        LodLevel::Lod1 => {
-            // Check transitions in both directions
-            if distance < settings.high_detail_distance - LOD_HYSTERESIS {
-                LodLevel::Lod0
-            } else if distance > lod1_distance + LOD_HYSTERESIS {
-                LodLevel::Lod2
-            } else {
-                LodLevel::Lod1
-            }
-        }
-        LodLevel::Lod2 => {
-            if distance < lod1_distance - LOD_HYSTERESIS {
-                LodLevel::Lod1
-            } else if distance > lod2_distance + LOD_HYSTERESIS {
-                LodLevel::Lod3
-            } else {
-                LodLevel::Lod2
-            }
-        }
-        LodLevel::Lod3 => {
-            if distance < lod2_distance - LOD_HYSTERESIS {
-                LodLevel::Lod2
-            } else if distance > settings.cull_distance + LOD_HYSTERESIS {
-                LodLevel::Culled
-            } else {
-                LodLevel::Lod3
-            }
-        }
-        LodLevel::Culled => {
-            // Currently culled - need to come INSIDE cull threshold to show
-            if distance < settings.cull_distance - LOD_HYSTERESIS {
-                LodLevel::Lod3
-            } else {
-                LodLevel::Culled
-            }
-        }
-    }
-}
-
-
-// =============================================================================
-// Visibility Optimization Systems
-// =============================================================================
-
-/// Updates face visibility for chunks that have been modified.
-///
-/// This computes the 15-bit connectivity mask indicating which chunk faces
-/// can see each other through air voxels. Used by the BFS occlusion system.
-fn update_chunk_face_visibility_system(mut world: ResMut<VoxelWorld>) {
-    // Collect positions of chunks needing visibility update
-    let dirty_positions: Vec<IVec3> = world
-        .chunk_entries()
-        .filter(|(_, chunk)| chunk.is_visibility_dirty())
-        .map(|(pos, _)| *pos)
-        .collect();
-
-    for pos in dirty_positions {
-        if let Some(chunk) = world.get_chunk_mut(pos) {
-            // Ensure uniformity is computed first (needed by visibility algorithm)
-            chunk.compute_uniformity();
-            let visibility = compute_face_visibility(chunk);
-            chunk.set_face_visibility(visibility);
-            chunk.clear_visibility_dirty();
-        }
-    }
-}
-
-/// Rebuilds the chunk octree when chunks have been added or removed.
-///
-/// The octree enables O(log N) frustum culling instead of checking every chunk.
-fn update_octree_system(
-    world: Res<VoxelWorld>,
-    mut octree: ResMut<ChunkOctree>,
-    gen_state: Res<ChunkGenerationState>,
-) {
-    // Don't rebuild during initial world generation
-    if !gen_state.is_complete {
-        return;
+    #[test]
+    fn expected_world_chunk_count_rejects_invalid_sizes() {
+        assert_eq!(expected_world_chunk_count(IVec3::new(32, 6, 32)), 6144);
+        assert_eq!(expected_world_chunk_count(IVec3::new(0, 6, 32)), 0);
+        assert_eq!(expected_world_chunk_count(IVec3::new(32, -1, 32)), 0);
     }
 
-    // Build octree if dirty or not yet built
-    if octree.is_dirty() || !octree.is_built() {
-        octree.build(&world);
-    }
-}
-
-/// Applies visibility culling to chunks based on octree frustum + BFS occlusion.
-///
-/// NOTE: Currently disabled - the BFS occlusion needs more work to avoid
-/// culling visible terrain in open areas. The infrastructure (face visibility,
-/// octree, BFS) is in place for future use in caves/enclosed areas.
-///
-/// Chunks that are:
-/// 1. Outside the camera frustum (octree test), OR
-/// 2. Occluded by solid geometry (BFS test)
-/// are marked as force-culled to skip rendering.
-#[allow(dead_code)]
-fn apply_visibility_culling_system(
-    _octree: Res<ChunkOctree>,
-    _visible_chunks: Res<VisibleChunks>,
-    _camera_query: Query<(&Transform, &Projection), With<PlayerCamera>>,
-    _world: ResMut<VoxelWorld>,
-    _config: Res<OcclusionConfig>,
-    _gen_state: Res<ChunkGenerationState>,
-) {
-    // DISABLED: Occlusion culling is too aggressive for open terrain.
-    // It culls terrain chunks while leaving props visible, causing floating objects.
-    //
-    // TODO: Re-enable when:
-    // 1. BFS considers distance-based LOD thresholds
-    // 2. Props are properly tied to terrain chunk visibility
-    // 3. Occlusion is only applied in enclosed areas (caves, buildings)
-}
-
-// =============================================================================
-// LOD System
-// =============================================================================
-
-/// Updates the LOD level of each chunk based on distance from the camera.
-///
-/// Chunks are assigned to one of three LOD levels:
-/// - `High`: Close to camera, uses full detail meshing
-/// - `Low`: Medium distance, uses simplified meshing
-/// - `Culled`: Far away, not rendered at all
-///
-/// Uses hysteresis to prevent rapid LOD switching when camera is near thresholds.
-fn update_chunk_lod_system(
-    mut world: ResMut<VoxelWorld>,
-    camera_query: Query<&Transform, With<PlayerCamera>>,
-    lod_settings: Res<LodSettings>,
-) {
-    let Ok(camera_transform) = camera_query.single() else {
-        return;
-    };
-
-    let camera_pos = camera_transform.translation;
-
-    let mut lod_changed: Vec<IVec3> = Vec::new();
-
-    for (chunk_pos, chunk) in world.chunk_entries_mut() {
-        let world_pos = VoxelWorld::chunk_to_world(*chunk_pos);
-        let chunk_center = world_pos.as_vec3() + Vec3::splat(CHUNK_SIZE_F32 * 0.5);
-        let distance = chunk_center.distance(camera_pos);
-
-        // Use hysteresis-aware LOD calculation
-        let current_lod = chunk.lod_level();
-        let target_lod = calculate_target_lod_with_hysteresis(distance, current_lod, &lod_settings);
-
-        if chunk.set_lod_level(target_lod) {
-            lod_changed.push(*chunk_pos);
-        }
-    }
-
-    for chunk_pos in lod_changed {
-        for offset in [
-            IVec3::new(-1, 0, 0),
+    #[test]
+    fn dirty_chunk_priority_sorts_only_nearest_visit_window() {
+        let mut dirty_chunks = vec![
+            IVec3::new(10, 0, 0),
+            IVec3::new(2, 0, 0),
+            IVec3::new(0, 0, 0),
             IVec3::new(1, 0, 0),
-            IVec3::new(0, 0, -1),
-            IVec3::new(0, 0, 1),
-        ] {
-            let neighbor_pos = chunk_pos + offset;
-            if let Some(neighbor) = world.get_chunk_mut(neighbor_pos) {
-                neighbor.mark_dirty();
+        ];
+
+        let sort_window =
+            prioritize_dirty_chunks_for_camera(&mut dirty_chunks, Some(Vec3::ZERO), 2);
+
+        assert_eq!(sort_window, 2);
+        assert_eq!(dirty_chunks[0], IVec3::new(0, 0, 0));
+        assert_eq!(dirty_chunks[1], IVec3::new(1, 0, 0));
+    }
+
+    #[test]
+    fn runtime_chunk_stats_recompute_continues_after_dirty_queue_drains() {
+        assert!(should_recompute_runtime_chunk_stats(30));
+        assert!(!should_recompute_runtime_chunk_stats(31));
+
+        assert!(!should_defer_runtime_chunk_stats_recompute(false, 100, 4));
+        assert!(!should_defer_runtime_chunk_stats_recompute(true, 4, 4));
+        assert!(should_defer_runtime_chunk_stats_recompute(true, 5, 4));
+    }
+
+    #[test]
+    fn runtime_chunk_stats_force_an_initial_snapshot_for_loaded_worlds() {
+        assert!(should_force_initial_runtime_chunk_stats(0, 6144));
+        assert!(!should_force_initial_runtime_chunk_stats(6144, 6144));
+        assert!(!should_force_initial_runtime_chunk_stats(0, 0));
+    }
+
+    #[test]
+    fn generation_dirty_meshes_use_startup_burst() {
+        let reason_counts = MeshDirtyReasonCounts {
+            generation: 8,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            chunks_per_frame_limit_for_dirty_meshes(&reason_counts, false, true),
+            MAX_STARTUP_CHUNKS_PER_FRAME
+        );
+    }
+
+    #[test]
+    fn generation_dirty_meshes_keep_runtime_limit_before_generation_completes() {
+        let reason_counts = MeshDirtyReasonCounts {
+            generation: 8,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            chunks_per_frame_limit_for_dirty_meshes(&reason_counts, false, false),
+            MAX_CHUNKS_PER_FRAME
+        );
+    }
+
+    #[test]
+    fn terrain_mutation_dirty_meshes_keep_runtime_limit() {
+        let reason_counts = MeshDirtyReasonCounts {
+            generation: 8,
+            terrain_mutation: 1,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            chunks_per_frame_limit_for_dirty_meshes(&reason_counts, false, true),
+            MAX_CHUNKS_PER_FRAME
+        );
+    }
+
+    #[test]
+    fn lod_churn_dirty_meshes_keep_lod_limit() {
+        let reason_counts = MeshDirtyReasonCounts {
+            lod: 8,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            chunks_per_frame_limit_for_dirty_meshes(&reason_counts, true, true),
+            MAX_LOD_TRANSACTION_CHUNKS_PER_FRAME
+        );
+    }
+
+    #[test]
+    fn water_body_edge_masks_track_chunk_edge_cells() {
+        let west_edge = water_body_edge_bit(0) | water_body_edge_bit(3);
+        let east_edge = water_body_edge_bit(3) | water_body_edge_bit(CHUNK_SIZE_I32 - 1);
+
+        assert_ne!(west_edge & east_edge, 0);
+        assert_eq!(west_edge & water_body_edge_bit(2), 0);
+        assert_eq!(water_body_edge_bit(-1), 0);
+        assert_eq!(water_body_edge_bit(CHUNK_SIZE_I32), 0);
+    }
+
+    #[test]
+    fn water_body_distance_uses_nearest_chunk_not_union_aabb() {
+        let world = VoxelWorld::new(IVec3::new(32, 6, 32));
+        let sample = |chunk_pos: IVec3, aabb_min: Vec3, aabb_max: Vec3| WaterMeshBodySample {
+            entity: Entity::from_bits(1),
+            chunk_pos,
+            surface_y: WATER_LEVEL,
+            surface_area: 256.0,
+            max_depth: 8,
+            average_depth: 8.0,
+            aabb_min,
+            aabb_max,
+            touches_world_edge: true,
+            view_visible: true,
+            edge_north: 0,
+            edge_south: 0,
+            edge_west: 0,
+            edge_east: 0,
+        };
+        let samples = [
+            sample(
+                IVec3::new(0, 1, 0),
+                Vec3::new(0.0, WATER_LEVEL as f32, 0.0),
+                Vec3::new(16.0, WATER_LEVEL as f32 + 1.0, 16.0),
+            ),
+            sample(
+                IVec3::new(31, 1, 31),
+                Vec3::new(496.0, WATER_LEVEL as f32, 496.0),
+                Vec3::new(512.0, WATER_LEVEL as f32 + 1.0, 512.0),
+            ),
+        ];
+
+        let group = build_water_body_group(
+            &[0, 1],
+            &samples,
+            &world,
+            Some(Vec3::new(256.0, WATER_LEVEL as f32, 256.0)),
+            &HashMap::new(),
+        );
+
+        assert!(group.nearest_distance > WATER_FANCY_DISTANCE);
+        assert_eq!(group.material_mode, WaterBodyMaterialMode::Cheap);
+    }
+
+    #[test]
+    fn live_terrain_material_stays_full_triplanar_by_distance() {
+        assert_eq!(
+            terrain_material_quality_for_lod(LodLevel::Lod1, None),
+            TerrainMaterialQuality::FullTriplanar
+        );
+        assert_eq!(
+            terrain_material_quality_for_distance(
+                10_000.0,
+                TerrainMaterialQuality::FullTriplanar,
+                None,
+                RenderQualityPreset::High,
+            ),
+            TerrainMaterialQuality::FullTriplanar
+        );
+    }
+
+    #[test]
+    fn generated_chunk_matches_single_voxel_generator_for_sample_chunks() {
+        let generator = TerrainGenerator::default();
+        let mut chunk_positions = vec![IVec3::new(0, 0, 0)];
+
+        'find_tree: for z in 0..128 {
+            for x in 0..128 {
+                let terrain_height = generator.get_height(x, z);
+                if generator.should_spawn_tree(x, z, terrain_height) {
+                    chunk_positions.push(IVec3::new(
+                        x.div_euclid(CHUNK_SIZE_I32),
+                        (terrain_height + 1).div_euclid(CHUNK_SIZE_I32),
+                        z.div_euclid(CHUNK_SIZE_I32),
+                    ));
+                    break 'find_tree;
+                }
+            }
+        }
+
+        for chunk_pos in chunk_positions {
+            let (chunk, _) = generate_chunk_async(chunk_pos, &generator);
+            let chunk_world = chunk_pos * CHUNK_SIZE_I32;
+
+            for z in 0..CHUNK_SIZE {
+                for y in 0..CHUNK_SIZE {
+                    for x in 0..CHUNK_SIZE {
+                        let world_x = chunk_world.x + x as i32;
+                        let world_y = chunk_world.y + y as i32;
+                        let world_z = chunk_world.z + z as i32;
+                        assert_eq!(
+                            chunk.get(UVec3::new(x as u32, y as u32, z as u32)),
+                            generator.get_voxel(world_x, world_y, world_z),
+                            "voxel mismatch at world ({world_x}, {world_y}, {world_z}) in chunk {chunk_pos:?}"
+                        );
+                    }
+                }
             }
         }
     }

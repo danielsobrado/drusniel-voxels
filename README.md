@@ -1,80 +1,38 @@
 # Drusniel Voxels
 
-Rust voxel game prototype based on the Drusniel world.
+Game based on https://www.drusniel.com/ lore.
 
-![v0.4 Preview](assets/images/v0.4-props1.jpg)
+![Loader](assets/images/Loader.jpg)
 
-## v0.4
+## Version History
 
-This version expands the project into a larger terrain, rendering, building, and world
-interaction prototype.
+| Version | Summary | Main Image |
+| ------- | ------- | ---------- |
+| v0.5 | Current development version with water overhaul, NAADF experiments, performance work, collider benches, sounds, fantasy UI, terrain hex-tiling, and the new editor. | ![v0.5 Editor Preview](assets/images/editor1.jpg) |
+| v0.4 | Rendering stack, GI, atmosphere, terrain tools, building systems, props, and persistence. | ![v0.4 Props and Vegetation](assets/images/v0.4-props1.jpg) |
+| v0.3 | PBR materials, triplanar splatting, surface-net fixes, and smoother slope movement. | ![v0.3 Preview](assets/images/V0.3.jpg) |
+| v0.2 | Procedural grass, terrain balance, water restoration, texture assets, and rendering polish. | ![v0.2 Preview](assets/images/V0.2.jpg) |
+| v0.1 | Initial implementation, chunk rendering fixes, and tilable terrain adjustments. | ![v0.1 Preview](assets/images/V0.1.jpg) |
 
-Highlights:
+## Controls
 
-- HDR rendering pipeline with tonemapping, bloom, debanding, and color grading
-- Radiance-cascade global illumination experiments
-- Adaptive GI quality presets
-- GTAO ambient occlusion
-- PCSS soft shadows
-- Distance fog and volumetric fog
-- Volumetric clouds
-- Gerstner-style water with foam and caustic effects
-- Weather particles for rain, snow, and dust
-- Multi-layer vegetation wind animation
-- Grass subsurface scattering and contact-shadow support
-- Environment-map lighting for PBR reflections and ambient lighting
-- Texture arrays with mipmaps and anisotropic filtering
-- Expanded PBR materials for terrain, props, and buildings
-- Chunk LOD with skirts and GPU fallback paths
-- Prop LOD with billboards and mesh decimation
-- Extended prop view distances
-- Snap-point building system with ghost previews
-- Terrain sculpting tools for raise, lower, level, and smooth operations
-- Terrain conforming for placed props and buildings
-- Save/load persistence
-- Prop placement persistence
-- Minimap, inventory, hotbar, chat, settings, debug overlays, and photo mode
-- Config-driven tuning for rendering, weather, water, terrain, props, camera, and input
+The runtime supports keyboard and mouse movement, terrain debug toggles, camera controls,
+digging tools, and editor-facing workflows.
 
-## Setup
+## Profiling
 
-Install Rust, then build from the repository root:
+Benchmark scenes are kept under `bench/scenes`. Use the release bench commands for
+performance checks before making timing claims.
 
-```bash
-cargo build
-```
+## Rendering And NAADF
 
-Run the game:
+The rendering stack includes terrain, water, lighting, post-processing, and experimental
+NAADF paths.
 
-```bash
-cargo run
-```
+## Free Texture Sources Guide
 
-## Project Layout
+Runtime texture assets live under `assets/textures` and `assets/pbr`.
 
-| Path | Role |
-|---|---|
-| `src/main.rs` | Runtime entry point |
-| `src/lib.rs` | Shared module root |
-| `src/atmosphere/` | Atmosphere, fog, and sky integration |
-| `src/building/` | Snap-point building system |
-| `src/camera/` | Camera controller and configuration |
-| `src/config/` | YAML and JSON config loading |
-| `src/input/` | Input bindings and manager |
-| `src/interaction/` | Targeting, editing, palette, and debug interaction |
-| `src/menu/` | Menus, settings, multiplayer screen, and UI |
-| `src/particles/` | Weather particle systems |
-| `src/physics/` | Physics plugin, layers, and terrain colliders |
-| `src/player/` | Player controller, input, spawning, and plugin |
-| `src/props/` | Prop loading, placement, LOD, persistence, and rendering |
-| `src/rendering/` | Rendering pipeline, materials, shadows, GI, water, clouds, and effects |
-| `src/terrain/` | Terrain generation and terrain editing tools |
-| `src/vegetation/` | Grass and wind animation |
-| `src/voxel/` | Voxel world, chunks, meshing, LOD, occlusion, and persistence |
-| `assets/config/` | Runtime configuration files |
-| `assets/models/` | Runtime model assets |
-| `assets/pbr/` | PBR texture sets |
-| `assets/shaders/` | WGSL shaders |
-| `assets/textures/` | Texture atlas, skybox, billboards, and terrain textures |
-| `benches/` | Benchmark targets |
-| `tests/` | Rust test suite |
+## Editor
+
+The desktop editor source is included under `editor`.

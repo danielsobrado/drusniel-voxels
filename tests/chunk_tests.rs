@@ -2,7 +2,9 @@
 
 use bevy::math::{IVec3, UVec3};
 use voxel_builder::constants::{CHUNK_SIZE, CHUNK_VOLUME};
-use voxel_builder::voxel::chunk::{Chunk, ChunkData, LodLevel};
+use voxel_builder::voxel::chunk::{
+    Chunk, ChunkData, ChunkUniformity, FaceVisibility, LodLevel, MeshDirtyReason,
+};
 use voxel_builder::voxel::types::VoxelType;
 
 #[test]
@@ -62,7 +64,26 @@ fn setting_same_voxel_does_not_mark_dirty() {
     chunk.clear_dirty();
     chunk.set(UVec3::new(0, 0, 0), VoxelType::Air);
 
-    assert!(!chunk.is_dirty(), "Setting same voxel should not mark dirty");
+    assert!(
+        !chunk.is_dirty(),
+        "Setting same voxel should not mark dirty"
+    );
+}
+
+#[test]
+fn with_voxels_sets_generation_state_without_mutation_reason() {
+    let mut voxels = [VoxelType::Air; CHUNK_VOLUME];
+    voxels[Chunk::index(1, 2, 3)] = VoxelType::Rock;
+
+    let chunk = Chunk::with_voxels(IVec3::new(2, 3, 4), voxels);
+
+    assert_eq!(chunk.position(), IVec3::new(2, 3, 4));
+    assert_eq!(chunk.get(UVec3::new(1, 2, 3)), VoxelType::Rock);
+    assert!(chunk.is_dirty());
+    assert!(chunk.has_dirty_reason(MeshDirtyReason::Generation));
+    assert!(!chunk.has_dirty_reason(MeshDirtyReason::TerrainMutation));
+    assert_eq!(chunk.uniformity(), ChunkUniformity::Mixed);
+    assert!(chunk.is_visibility_dirty());
 }
 
 #[test]
@@ -75,11 +96,12 @@ fn clear_dirty_works() {
 }
 
 #[test]
-fn mark_dirty_works() {
+fn mark_dirty_with_reason_works() {
     let mut chunk = Chunk::new(IVec3::ZERO);
     chunk.clear_dirty();
-    chunk.mark_dirty();
+    chunk.mark_dirty_with_reason(MeshDirtyReason::Generation);
     assert!(chunk.is_dirty());
+    assert!(chunk.has_dirty_reason(MeshDirtyReason::Generation));
 }
 
 #[test]
@@ -180,7 +202,9 @@ fn chunk_to_data_and_back() {
 fn chunk_data_serializable() {
     let data = ChunkData {
         voxels: vec![VoxelType::Air; CHUNK_VOLUME],
+        material_overrides: Vec::new(),
         position: IVec3::new(10, 20, 30),
+        face_visibility: FaceVisibility::default(),
     };
 
     // Serialize with bincode
@@ -191,6 +215,10 @@ fn chunk_data_serializable() {
 
     assert_eq!(restored.position, data.position);
     assert_eq!(restored.voxels.len(), data.voxels.len());
+    assert_eq!(
+        restored.material_overrides.len(),
+        data.material_overrides.len()
+    );
 }
 
 #[test]

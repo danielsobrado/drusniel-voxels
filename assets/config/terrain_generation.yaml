@@ -1,28 +1,35 @@
 terrain:
-  # Vertical range (world is 4 chunks = 64 voxels tall, Y: 0-63)
+  # Vertical range (world is 8 chunks = 128 voxels tall, Y: 0-127)
   height:
-    min: 1            # Minimum terrain height
-    max: 55           # Maximum terrain height (leave room for sky)
-    sea_level: 18
+    min: 14           # Keeps normal land columns above the bedrock crust.
+    max: 118
+    sea_level: 0
 
   # Base continental shape
   continent:
     scale: 0.001      # Very large features
-    amplitude: 12.0   # Scaled for 64-voxel world
+    amplitude: 40.0
+    octaves: 2
+    persistence: 0.5
+    lacunarity: 2.0
 
   # Mountain ranges
   mountains:
     scale: 0.008
-    amplitude: 30.0   # Scaled for 64-voxel world
-    octaves: 6
+    amplitude: 120.0
+    octaves: 7
     persistence: 0.48
     lacunarity: 2.3
     ridge_power: 1.8  # Sharper peaks (1.0 = smooth, 2.0+ = sharp ridges)
+    massif_scale: 0.0035
+    massif_amplitude: 38.0
+    massif_threshold: 0.38
+    massif_power: 1.65
 
   # Hills and local variation
   hills:
     scale: 0.025
-    amplitude: 8.0    # Scaled for 64-voxel world
+    amplitude: 25.0
     octaves: 4
     persistence: 0.5
     lacunarity: 2.0
@@ -30,10 +37,15 @@ terrain:
   # Fine detail
   detail:
     scale: 0.1
-    amplitude: 2.0
+    amplitude: 3.0
     octaves: 3
     persistence: 0.5
     lacunarity: 2.0
+
+  # Disabled by default so the generated world has no hidden underground voids
+  # or sealed water below the playable terrain crust.
+  caves:
+    enabled: false
 
   # River generation
   rivers:
@@ -44,6 +56,34 @@ terrain:
     octaves: 3           # Noise detail for meandering
     tributary_scale: 0.008  # Scale for smaller streams
     tributary_width: 2.0    # Width of tributaries
+
+  # Deterministic water body carving. Basins lower the terrain before water fill,
+  # so rendered lake/pond surfaces have actual water volume beneath them.
+  water_bodies:
+    enabled: true
+    lakes:
+      enabled: true
+      spacing: 96.0
+      density: 0.38
+      min_radius: 18.0
+      max_radius: 42.0
+      min_depth: 3.0
+      max_depth: 8.0
+      shore_power: 1.45
+    ponds:
+      enabled: true
+      spacing: 48.0
+      density: 0.34
+      min_radius: 7.0
+      max_radius: 17.0
+      min_depth: 2.0
+      max_depth: 5.0
+      shore_power: 1.25
+    aquifers:
+      enabled: false
+      max_y: 10
+      noise_scale: 0.045
+      threshold: 0.84
 
   # Biome influence on height
   biome_modifiers:

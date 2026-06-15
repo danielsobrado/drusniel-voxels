@@ -280,7 +280,6 @@ impl Default for PropPersistenceConfig {
 mod tests {
     use super::*;
     use crate::props::PropType;
-    use std::env::temp_dir;
 
     #[test]
     fn test_chunk_file_path() {
@@ -290,16 +289,14 @@ mod tests {
 
     #[test]
     fn test_chunk_hash_deterministic() {
-        let props = vec![
-            PropPlacementData::new(
-                "test".to_string(),
-                PropType::Tree,
-                Vec3::new(1.0, 2.0, 3.0),
-                Vec3::ZERO,
-                Vec3::ONE,
-                100,
-            ),
-        ];
+        let props = vec![PropPlacementData::new(
+            "test".to_string(),
+            PropType::Tree,
+            Vec3::new(1.0, 2.0, 3.0),
+            Vec3::ZERO,
+            Vec3::ONE,
+            100,
+        )];
 
         let hash1 = calculate_chunk_hash(&props);
         let hash2 = calculate_chunk_hash(&props);

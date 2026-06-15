@@ -66,7 +66,9 @@ fn fbm(p: vec2<f32>) -> f32 {
     var frequency = 1.0;
     var pos = p;
 
-    for (var i = 0; i < 3; i++) {
+    // 2 octaves is sufficient for wind turbulence — the 3rd octave
+    // adds sub-blade detail that is invisible at grass rendering scale.
+    for (var i = 0; i < 2; i++) {
         value += amplitude * noise(pos * frequency);
         amplitude *= 0.5;
         frequency *= 2.0;
@@ -158,6 +160,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 }
 
 struct FragmentInput {
+    @builtin(position) clip_position: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(3) world_normal: vec3<f32>,
     @location(1) color: vec4<f32>,
@@ -222,7 +225,7 @@ fn compute_grass_ao(
 }
 
 @fragment
-fn fragment(input: FragmentInput, @builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f32> {
+fn fragment(input: FragmentInput) -> @location(0) vec4<f32> {
     let alpha = blade_alpha(input.uv);
     
     // Get sun direction from material uniform
@@ -262,8 +265,12 @@ fn fragment(input: FragmentInput, @builtin(position) frag_coord: vec4<f32>) -> @
     let fade_alpha = mix(min_alpha, 1.0, near_fade);
     let final_alpha = alpha * fade_alpha;
 
+    if final_alpha < 0.5 {
+        discard;
+    }
+
     if fade_alpha < 0.999 {
-        let dither = interleaved_gradient_noise(frag_coord.xy);
+        let dither = interleaved_gradient_noise(input.clip_position.xy);
         if final_alpha < dither {
             discard;
         }
@@ -274,5 +281,5 @@ fn fragment(input: FragmentInput, @builtin(position) frag_coord: vec4<f32>) -> @
     let fog_factor = clamp((distance - material.fog_start) / fog_range, 0.0, 1.0) * material.aerial_strength;
     let final_color = mix(shadowed_color, material.fog_color.rgb, fog_factor);
 
-    return vec4<f32>(final_color, final_alpha);
+    return vec4<f32>(final_color, 1.0);
 }

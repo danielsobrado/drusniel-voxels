@@ -1,0 +1,69 @@
+# NAADF is experimental and remains default-off for mainline builds.
+# Enable only with the `naadf` Cargo feature and focused A/B validation.
+enabled: false
+build_visible_chunks_only: true
+
+chunk_cache:
+  radius_chunks: 20
+  hysteresis_chunks: 2
+  max_chunks: 8192
+  max_chunk_updates_per_frame: 16
+  max_upload_bytes_per_frame: 16777216
+  max_gpu_memory_mb: 512
+
+gpu:
+  # Integrated GPUs remain blocked unless a focused diagnostic run opts in.
+  allow_integrated_gpu: false
+  prefer_gpu_builder: false
+  debug_readback: false
+
+preview:
+  max_ray_steps: 256
+  bounce_count: 1
+  accumulation_enabled: false
+  temporal_blend_factor: 0.85
+  denoise_enabled: false
+  denoise_quality: medium
+  spatial_radius: 1
+  spatial_depth_sigma: 0.04
+  spatial_normal_sigma: 0.25
+  gi_sky_strength: 0.16
+  gi_bounce_strength: 0.08
+  local_lights_enabled: false
+  local_light_limit: 16
+  local_light_shadows_enabled: false
+  reference_path_tracing_enabled: false
+  reference_sample_count: 16
+  reference_sky_strength: 0.22
+  reference_indirect_strength: 0.18
+  show_miss_sky: false
+  composite_mode: split_view
+  history_resolution_scale: 1.0
+
+path_b:
+  compositor_mode: off
+  depth_epsilon: 0.25
+  # Keep Path-B temporal disabled until ownership-mask history rejection lands.
+  enable_temporal: false
+  audit_overlay_alpha: 0.75
+  counters_enabled: false
+  foundation_200_210_verified: false
+
+debug:
+  visualize_chunks: false
+  visualize_ray_steps: false
+  visualize_aadf_bounds: false
+  compare_cpu_gpu: false
+  force_cpu_builder: false
+  force_gpu_builder: false
+
+froxel_sun_mask:
+  enabled: false
+  resolution: [160, 90, 64]
+  max_rays_per_frame: 65536
+  max_distance: 512.0
+
+use_for_gi_secondary: false
+use_for_sun_visibility: false
+use_for_terrain_ao: false
+use_for_contact_shadows: false

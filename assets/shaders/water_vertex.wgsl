@@ -5,8 +5,9 @@
 }
 
 #import bevy_water::water_functions as water_fn
-
 #import bevy_water::water_bindings
+#import noble_gerstner
+
 #ifdef PREPASS_PIPELINE
 #import bevy_pbr::prepass_io::{Vertex, VertexOutput}
 #else
@@ -36,11 +37,14 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
   let world_position = mesh_functions::mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
 
-  // Add the wave height to the world position.
-	var height = -0.5;
+	var height = 0.0;
 #ifdef DYN_WATER
   let w_pos = water_fn::uv_to_coord(vertex.uv);
+#ifdef USE_NOBLE_GERSTNER
+  height = noble_gerstner::calculateWaveHeightGerstner(w_pos, i32(water_bindings::material.wave_dir_a.y));
+#else
   height = water_fn::get_wave_height(w_pos);
+#endif
 #endif
 
   out.world_position = world_position + vec4<f32>((out.world_normal * height), 0.);
