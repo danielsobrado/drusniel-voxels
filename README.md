@@ -36,3 +36,5 @@ Runtime texture assets live under `assets/textures` and `assets/pbr`.
 ## Editor
 
 The desktop editor source is included under `editor`.
+
+License: CC BY-NC-SA.
