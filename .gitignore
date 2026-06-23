@@ -77,5 +77,9 @@ pkg/mod/cache/
 pkg/sumdb/
 tools/clod-poc/package-lock.json
 tools/clod-rs/
+docs/reference/
 
-pkg/
+tools/clod-poc/shots/
+tools/clod-poc/shots/phase-1/*.png
+tools/clod-poc/shots/phase-1/*
+
