@@ -4,6 +4,8 @@ Game based on https://www.drusniel.com/ lore.
 
 ![Loader](assets/images/Loader.jpg)
 
+Check the web based version: https://danielsobrado.github.io/drusniel-voxels-web/
+
 ## Version History
 
 | Version | Summary | Main Image |
