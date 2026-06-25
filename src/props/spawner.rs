@@ -122,6 +122,17 @@ pub fn spawn_props_on_terrain(
                 mesh_cache.meshes.len()
             );
         }
+        // Warn about stuck loading after 600 frames (~10s at 60fps), repeat every 300
+        if frame.0 >= 600 && frame.0 % 300 == 0 {
+            let stuck: Vec<&str> = mesh_cache.pending_gltfs.keys().map(|s| s.as_str()).collect();
+            warn!(
+                "Prop mesh cache still waiting after {} frames: pending=[{}], cached={}, failed={}",
+                frame.0,
+                stuck.join(", "),
+                mesh_cache.meshes.len(),
+                mesh_cache.failed_ids.len(),
+            );
+        }
         return;
     }
 
@@ -664,6 +675,9 @@ fn spawn_props_from_data(
     props
         .iter()
         .filter_map(|prop| {
+            if mesh_cache.is_prop_failed(&prop.id) {
+                return None;
+            }
             let transform = prop.to_transform();
             if protected_areas
                 .map(|registry| registry.prop_position_blocked(transform.translation))
@@ -1112,6 +1126,10 @@ pub fn spawn_debug_custom_props_near_player(
                     .entity(entity)
                     .insert(GrassPropWind::new(&transform, hash));
             }
+            continue;
+        }
+
+        if mesh_cache.is_prop_failed(id) {
             continue;
         }
 

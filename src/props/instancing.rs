@@ -7,7 +7,7 @@
 use bevy::gltf::{GltfMesh, GltfNode};
 use bevy::mesh::VertexAttributeValues;
 use bevy::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::PropAssets;
 #[cfg(feature = "legacy_prop_spawn")]
@@ -37,6 +37,9 @@ pub struct CachedPropMesh {
     pub bounds_from_mesh: bool,
 }
 
+/// Duration in seconds after which pending GLTF extraction is treated as stuck.
+const PROP_EXTRACTION_TIMEOUT_SECONDS: f64 = 60.0;
+
 /// Resource storing cached meshes for each prop type.
 #[derive(Resource)]
 pub struct PropMeshCache {
@@ -44,12 +47,16 @@ pub struct PropMeshCache {
     pub meshes: HashMap<String, Vec<CachedPropMesh>>,
     /// GLTF handles we're waiting to load
     pub pending_gltfs: HashMap<String, Handle<Gltf>>,
+    /// Prop IDs that failed scene load or mesh extraction
+    pub failed_ids: HashSet<String>,
     /// Whether extraction is complete for all props
     pub extraction_complete: bool,
     /// Whether instancing is enabled
     pub enabled: bool,
     /// Default material for props without materials
     pub default_material: Option<Handle<StandardMaterial>>,
+    /// Real time (seconds) when the first extraction pass started.
+    extraction_start_time_seconds: Option<f64>,
 }
 
 impl Default for PropMeshCache {
@@ -57,10 +64,12 @@ impl Default for PropMeshCache {
         Self {
             meshes: HashMap::new(),
             pending_gltfs: HashMap::new(),
+            failed_ids: HashSet::new(),
             extraction_complete: false,
             // Instancing enabled - spawner waits for extraction to complete
             enabled: true,
             default_material: None,
+            extraction_start_time_seconds: None,
         }
     }
 }
@@ -76,9 +85,13 @@ impl PropMeshCache {
         self.meshes.get(prop_id)
     }
 
-    /// Check if cache is ready (all props extracted)
+    /// Check if cache is ready (all props extracted or marked failed)
     pub fn is_ready(&self) -> bool {
-        self.extraction_complete && !self.meshes.is_empty()
+        self.extraction_complete
+    }
+
+    pub fn is_prop_failed(&self, prop_id: &str) -> bool {
+        self.failed_ids.contains(prop_id)
     }
 }
 
@@ -101,9 +114,33 @@ pub fn extract_prop_meshes(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut props_materials: ResMut<Assets<PropsMaterial>>,
     asset_server: Res<AssetServer>,
+    time: Res<Time>,
 ) {
     if !cache.enabled || cache.extraction_complete || !prop_assets.loaded {
         return;
+    }
+
+    // Start the extraction timer on first pass.
+    if cache.extraction_start_time_seconds.is_none() {
+        cache.extraction_start_time_seconds = Some(time.elapsed_secs_f64());
+    }
+
+    // Timeout: if extraction has been running too long, mark remaining
+    // pending GLTFs as failed so the system does not hang forever.
+    let elapsed = cache
+        .extraction_start_time_seconds
+        .map(|start| time.elapsed_secs_f64() - start)
+        .unwrap_or(0.0);
+    if elapsed > PROP_EXTRACTION_TIMEOUT_SECONDS && !cache.pending_gltfs.is_empty() {
+        let stuck: Vec<String> = cache.pending_gltfs.keys().cloned().collect();
+        for prop_id in &stuck {
+            warn!(
+                "Prop extraction timed out for '{}' ({:.0}s); marking as failed",
+                prop_id, elapsed,
+            );
+            cache.failed_ids.insert(prop_id.clone());
+        }
+        cache.pending_gltfs.clear();
     }
 
     // Create default material if needed
@@ -119,7 +156,14 @@ pub fn extract_prop_meshes(
 
     // First pass: queue GLTF loads for props we haven't started loading
     for (prop_id, scene_handle) in prop_assets.scenes.iter() {
-        if cache.has_cached(prop_id) || cache.pending_gltfs.contains_key(prop_id) {
+        if prop_assets.failed_ids.contains(prop_id) {
+            cache.failed_ids.insert(prop_id.clone());
+            continue;
+        }
+        if cache.has_cached(prop_id)
+            || cache.failed_ids.contains(prop_id)
+            || cache.pending_gltfs.contains_key(prop_id)
+        {
             continue;
         }
 
@@ -227,25 +271,53 @@ pub fn extract_prop_meshes(
             cache.meshes.insert(prop_id, cached_meshes);
         } else {
             warn!(
-                "No meshes extracted for prop '{}', will use SceneRoot fallback",
+                "No meshes extracted for prop '{}'; marking as failed",
                 prop_id
             );
+            cache.failed_ids.insert(prop_id);
         }
     }
 
-    // Re-insert pending GLTFs
+    // Re-insert pending GLTFs, dropping assets whose scene or GLTF load failed.
     for (prop_id, handle) in still_pending {
-        cache.pending_gltfs.insert(prop_id, handle);
+        if prop_assets.failed_ids.contains(&prop_id) {
+            cache.failed_ids.insert(prop_id);
+            continue;
+        }
+        match asset_server.get_load_state(handle.id()) {
+            Some(bevy::asset::LoadState::Failed(_)) => {
+                warn!("GLTF load failed for prop '{}'", prop_id);
+                cache.failed_ids.insert(prop_id);
+            }
+            _ => {
+                cache.pending_gltfs.insert(prop_id, handle);
+            }
+        }
     }
 
-    // Check if extraction is complete
-    if cache.pending_gltfs.is_empty() && !cache.meshes.is_empty() {
+    if cache.pending_gltfs.is_empty() && all_prop_assets_resolved(&cache, &prop_assets) {
         cache.extraction_complete = true;
         info!(
-            "Prop mesh extraction complete: {} prop types cached for GPU instancing",
-            cache.meshes.len()
+            "Prop mesh extraction complete: {} cached, {} failed",
+            cache.meshes.len(),
+            cache.failed_ids.len()
         );
     }
+}
+
+fn all_prop_assets_resolved(cache: &PropMeshCache, prop_assets: &PropAssets) -> bool {
+    if prop_assets.scenes.is_empty() {
+        return true;
+    }
+    for prop_id in prop_assets.scenes.keys() {
+        if prop_assets.failed_ids.contains(prop_id) || cache.failed_ids.contains(prop_id) {
+            continue;
+        }
+        if !cache.meshes.contains_key(prop_id) {
+            return false;
+        }
+    }
+    true
 }
 
 /// Recursively extract meshes from a GLTF node and its children.
